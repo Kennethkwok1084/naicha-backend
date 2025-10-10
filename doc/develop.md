@@ -325,15 +325,20 @@ CREATE INDEX idx_coupons_user_status ON coupons(user_id, status);
 
 * [ ] `POST /api/v1/admin/login`（文档+实现+测试）
 * [ ] `POST /api/v1/users/login`（文档+实现+测试）
+* [ ] `POST /api/v1/guests/session`（文档+实现+测试；游客购物车依赖的 session）
 * [ ] `GET /api/v1/shop/status`（文档+实现+测试）
 * [ ] `POST /api/v1/shop/delivery/check`（文档+实现+测试）
 * [ ] `GET /api/v1/menu`（文档+实现+测试+缓存命中测试）
+* [ ] `GET /api/v1/me/profile`（文档+实现+测试；需返回会员集点等基础信息）
+* [ ] `GET /api/v1/me/addresses`（文档+实现+测试；覆盖空列表与多地址场景）
 
 **测试 TODO**
 
 * [ ] 认证：正确/错误凭据；JWT 过期/篡改
 * [ ] 围栏：边界±20m；非法经纬度 400
 * [ ] 菜单：命中率≥95%、P95≤40ms；库存变更触发刷新
+* [ ] 游客 session：重复调用同设备是否复用/刷新策略
+* [ ] “我的”页面：`/me/profile` 与 `/me/addresses` 权限校验 + 空数据回退
 
 **验收**：`/menu` 压测命中缓存；OpenAPI 与 `doc/api.md` 一致。
 

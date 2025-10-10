@@ -2,7 +2,7 @@ PYTHON ?= python
 POETRY ?= poetry
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage
+.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -38,3 +38,14 @@ compose-up:
 
 compose-down:
 	docker compose down
+
+contract-test:
+	@set -euo pipefail; \
+	STATUS=0; \
+	DATABASE_URL=sqlite+aiosqlite:///:memory: $(PYTHON) -m uvicorn app.main:app --host 127.0.0.1 --port 8123 --log-level warning & \
+	SERVER_PID=$$!; \
+	sleep 2; \
+	DATABASE_URL=sqlite+aiosqlite:///:memory: $(PYTHON) -m schemathesis.cli run http://127.0.0.1:8123/openapi.json --url http://127.0.0.1:8123 --workers=1 --max-examples=5 --phases=examples || STATUS=$$?; \
+	kill $$SERVER_PID; \
+	wait $$SERVER_PID 2>/dev/null || true; \
+	exit $$STATUS

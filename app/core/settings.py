@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     static_match_time_window_min: int = Field(default=5, alias="STATIC_MATCH_TIME_WINDOW_MIN")
     delivery_radius_m: int = Field(default=1500, alias="DELIVERY_RADIUS_M")
     print_retry_max: int = Field(default=5, alias="PRINT_RETRY_MAX")
+    guest_session_ttl_minutes: int = Field(default=43200, alias="GUEST_SESSION_TTL_MINUTES")
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     allowed_origins_raw: str = Field(

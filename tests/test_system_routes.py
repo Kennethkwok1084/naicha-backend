@@ -1,9 +1,8 @@
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.api.routes import system as system_routes
 from app.core.settings import get_settings
 from app.main import app
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

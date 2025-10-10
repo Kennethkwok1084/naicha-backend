@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: |
+          PYTHON=.venv/bin/python make lint
+
+      - name: Test
+        env:
+          PYTHON: .venv/bin/python
+        run: |
+          make test
+
+      - name: Run Contract Tests
+        env:
+          PYTHON: .venv/bin/python
+        run: |
+          make contract-test
+
+      - name: Ensure API docs updated
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          if [ -z "$BASE_SHA" ]; then
+            echo "未能确定比较基线，跳过文档检查。"
+            exit 0
+          fi
+
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA")"
+
+          if echo "$CHANGED_FILES" | grep -E '^app/api/' >/dev/null 2>&1; then
+            if ! echo "$CHANGED_FILES" | grep -Fx 'doc/api.md' >/dev/null 2>&1; then
+              echo "检测到 app/api/ 目录有改动，但 doc/api.md 未同步更新。"
+              exit 1
+            fi
+          fi

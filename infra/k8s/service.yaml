@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: naicha-api
+  labels:
+    app: naicha-api
+spec:
+  type: ClusterIP
+  selector:
+    app: naicha-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
