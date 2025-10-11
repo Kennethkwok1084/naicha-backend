@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import BigInteger, DateTime, Integer, MetaData, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING_CONVENTION: dict[str, str] = {
@@ -33,6 +33,9 @@ class TimestampMixin(CreatedAtMixin):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+BIGINT_PK = BigInteger().with_variant(Integer, "sqlite")
 
 
 # 确保 Alembic autogenerate 能发现所有模型

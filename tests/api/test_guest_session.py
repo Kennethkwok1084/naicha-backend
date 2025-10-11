@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import pytest
+
+from app.api.routes.guests import create_guest_session, get_guest_session_service
 from app.db.session import get_async_session
 from app.main import app
 from app.models.orders import IdempotencyKey
+from app.schemas import GuestSessionCreateRequestSchema
+from app.services.guest import GuestSessionService
 from httpx import ASGITransport, AsyncClient
 
 
@@ -52,3 +56,12 @@ async def test_guest_session_reuse_existing(db_session) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["guest_session_id"] == "gs_existing"
+
+
+@pytest.mark.asyncio
+async def test_guest_session_handler_direct(db_session) -> None:
+    service = GuestSessionService(db_session)
+    payload = GuestSessionCreateRequestSchema(session_token=None)
+
+    response = await create_guest_session(payload=payload, service=service)
+    assert response.guest_session_id.startswith("gs_")

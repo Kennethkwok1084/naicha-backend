@@ -114,3 +114,56 @@ async def test_delivery_check_without_location(db_session) -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["message"] == "Shop location not configured."
+
+
+@pytest.mark.asyncio
+async def test_delivery_check_respects_buffer(db_session) -> None:
+    profile = ShopProfile(
+        id=1,
+        location_lat=31.2304,
+        location_lng=121.4737,
+        delivery_radius_m=0,
+    )
+    db_session.add(profile)
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/shop/delivery/check",
+                json={"lat": 31.2304 + 0.00015, "lng": 121.4737},
+            )
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["deliverable"] is True
+    assert result["distance_m"] > 0
+
+
+@pytest.mark.asyncio
+async def test_delivery_check_invalid_coordinates(db_session) -> None:
+    profile = ShopProfile(
+        id=1,
+        location_lat=31.2304,
+        location_lng=121.4737,
+        delivery_radius_m=500,
+    )
+    db_session.add(profile)
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/shop/delivery/check",
+                json={"lat": 123.456, "lng": 10},
+            )
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+    assert response.status_code == 422

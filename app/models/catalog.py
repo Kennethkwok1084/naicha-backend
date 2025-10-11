@@ -11,7 +11,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm.attributes import NO_VALUE
 
 from app.db.base import Base, CreatedAtMixin, TimestampMixin
 
@@ -125,3 +127,36 @@ class ProductSpecMapping(Base):
 
 
 Index("ix_categories_sort_order", Category.sort_order)
+
+
+def _invalidate_menu_cache() -> None:
+    # 延迟导入以避免循环依赖 (menu 服务依赖 catalog 模型)
+    from app.services.menu import invalidate_menu_cache
+
+    invalidate_menu_cache()
+
+
+@event.listens_for(Product.inventory_status, "set", retval=True)
+def _product_inventory_status_change(target: Product, value: str, oldvalue: str, initiator):
+    if oldvalue is NO_VALUE or value == oldvalue:
+        return value
+    _invalidate_menu_cache()
+    return value
+
+
+@event.listens_for(Product.status, "set", retval=True)
+def _product_status_change(target: Product, value: str, oldvalue: str, initiator):
+    if oldvalue is NO_VALUE or value == oldvalue:
+        return value
+    _invalidate_menu_cache()
+    return value
+
+
+@event.listens_for(SpecOption.inventory_status, "set", retval=True)
+def _spec_option_inventory_status_change(
+    target: SpecOption, value: str, oldvalue: str, initiator
+):
+    if oldvalue is NO_VALUE or value == oldvalue:
+        return value
+    _invalidate_menu_cache()
+    return value

@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -13,12 +15,21 @@ settings: Settings = get_settings()
 configure_logging(settings)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        await dispose_engine()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Naicha Backend",
         version="0.1.0",
         docs_url="/docs" if settings.app_env != "prod" else None,
         redoc_url=None,
+        lifespan=lifespan,
     )
 
     app.state.settings = settings
@@ -34,8 +45,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    await dispose_engine()

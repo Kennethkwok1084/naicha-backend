@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
+
+from app.api.routes.admin import admin_login
 from app.core.security import TokenScope, decode_access_token, hash_password
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import Admin
+from app.schemas import AdminLoginRequestSchema
+from app.services.auth import AuthService
 from httpx import ASGITransport, AsyncClient
 
 
@@ -65,3 +70,35 @@ async def test_admin_login_invalid_credentials(db_session) -> None:
     assert response.status_code == 401
     payload = response.json()
     assert payload["error"]["message"] == "Invalid username or password."
+
+
+@pytest.mark.asyncio
+async def test_admin_login_handler_direct_success(db_session) -> None:
+    admin = Admin(
+        admin_id=42,
+        username="direct",
+        password_hash=hash_password("pass123"),
+        role="admin",
+    )
+    db_session.add(admin)
+    await db_session.flush()
+
+    schema = AdminLoginRequestSchema(username="direct", password="pass123")
+    service = AuthService(db_session)
+
+    token = await admin_login(payload=schema, auth_service=service)
+    decoded = decode_access_token(token.access_token)
+    assert decoded.scope == TokenScope.ADMIN
+    assert decoded.sub == str(admin.admin_id)
+
+
+@pytest.mark.asyncio
+async def test_admin_login_handler_direct_failure(db_session) -> None:
+    schema = AdminLoginRequestSchema(username="nouser", password="nope123")
+    service = AuthService(db_session)
+
+    with pytest.raises(HTTPException) as exc:
+        await admin_login(payload=schema, auth_service=service)
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid username or password."

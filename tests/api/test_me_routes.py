@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
+
+from app.api.routes.me import list_addresses
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import User, UserAddress
+from app.services.user import UserService
 from httpx import ASGITransport, AsyncClient
 
 
@@ -78,3 +83,77 @@ async def test_me_endpoints_require_auth(db_session) -> None:
         app.dependency_overrides.pop(get_async_session, None)
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_endpoints_reject_expired_token(db_session) -> None:
+    user = User(user_id=301, open_id="openid-expired")
+    db_session.add(user)
+    await db_session.flush()
+
+    token = create_access_token(
+        subject=str(user.user_id),
+        scope=TokenScope.USER,
+        expires_delta=timedelta(seconds=-1),
+    )
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/me/profile", headers={"Authorization": f"Bearer {token}"}
+            )
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+    assert response.status_code == 401
+    assert response.json()["error"]["message"] == "Token expired"
+
+
+@pytest.mark.asyncio
+async def test_me_endpoints_reject_tampered_token(db_session) -> None:
+    user = User(user_id=302, open_id="openid-tampered")
+    db_session.add(user)
+    await db_session.flush()
+
+    token = create_access_token(subject=str(user.user_id), scope=TokenScope.USER) + "tamper"
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/me/addresses", headers={"Authorization": f"Bearer {token}"}
+            )
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+    assert response.status_code == 401
+    assert response.json()["error"]["message"] == "Token invalid"
+
+
+@pytest.mark.asyncio
+async def test_list_addresses_handler_direct(db_session) -> None:
+    user = User(user_id=401, open_id="openid-direct")
+    db_session.add(user)
+    await db_session.flush()
+
+    addr1 = UserAddress(
+        address_id=11,
+        user_id=user.user_id,
+        contact_name="李四",
+        phone="13900000000",
+        address_line="北京市",
+        lat=39.9,
+        lng=116.4,
+        is_default=False,
+    )
+    db_session.add(addr1)
+    await db_session.flush()
+
+    service = UserService(db_session)
+    result = await list_addresses(current_user=user, service=service)
+
+    assert len(result) == 1
+    assert result[0].contact_name == "李四"

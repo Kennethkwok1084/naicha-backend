@@ -82,3 +82,33 @@ async def get_current_user(
     if not user:
         raise _unauthorized("User not found or inactive.")
     return user
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    session: AsyncSession = Depends(get_async_session),
+) -> User | None:
+    if credentials is None:
+        return None
+
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except InvalidTokenError as exc:
+        raise _unauthorized(str(exc)) from exc
+
+    if payload.scope != TokenScope.USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient scope for user resource.",
+        )
+
+    try:
+        user_id = int(payload.sub)
+    except ValueError as exc:
+        raise _unauthorized("Invalid token subject.") from exc
+
+    service = AuthService(session)
+    user = await service.get_user_by_id(user_id)
+    if not user:
+        raise _unauthorized("User not found or inactive.")
+    return user

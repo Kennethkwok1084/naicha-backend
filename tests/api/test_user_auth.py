@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
+
+from app.api.routes.users import user_login
 from app.core.security import TokenScope, decode_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import User
+from app.schemas import UserLoginRequestSchema
+from app.services.auth import AuthService
 from httpx import ASGITransport, AsyncClient
 
 
@@ -84,3 +89,25 @@ async def test_user_login_rejects_blank_code(db_session) -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["message"] == "Invalid authorization code."
+
+
+@pytest.mark.asyncio
+async def test_user_login_handler_direct_success(db_session) -> None:
+    service = AuthService(db_session)
+    schema = UserLoginRequestSchema(code="openid-direct", nickname="Direct", avatar_url=None)
+
+    result = await user_login(payload=schema, auth_service=service)
+    assert result.user.nickname == "Direct"
+    assert result.access_token
+
+
+@pytest.mark.asyncio
+async def test_user_login_handler_direct_invalid_code(db_session) -> None:
+    service = AuthService(db_session)
+    schema = UserLoginRequestSchema(code=" ")
+
+    with pytest.raises(HTTPException) as exc:
+        await user_login(payload=schema, auth_service=service)
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Invalid authorization code."

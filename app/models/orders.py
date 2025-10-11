@@ -18,13 +18,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, CreatedAtMixin, TimestampMixin
+from app.db.base import BIGINT_PK, Base, CreatedAtMixin, TimestampMixin
 
 
 class Order(Base, TimestampMixin):
     __tablename__ = "orders"
 
-    order_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     order_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"), nullable=True)
     guest_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -70,7 +70,7 @@ Index(
 class OrderItem(Base):
     __tablename__ = "order_items"
 
-    item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    item_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     order_id: Mapped[int] = mapped_column(
         ForeignKey("orders.order_id", ondelete="CASCADE"),
         nullable=False,
@@ -87,7 +87,7 @@ class OrderItem(Base):
 class PaymentRecord(Base, CreatedAtMixin):
     __tablename__ = "payment_records"
 
-    pay_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    pay_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     record_type: Mapped[str] = mapped_column(String(10), nullable=False)
     channel: Mapped[str] = mapped_column(String(20), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="CNY")
@@ -136,7 +136,7 @@ class IdempotencyKey(Base, CreatedAtMixin):
 class AuditLog(Base, CreatedAtMixin):
     __tablename__ = "audit_logs"
 
-    audit_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    audit_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     actor_type: Mapped[str] = mapped_column(String(10), nullable=False)
     actor_admin_id: Mapped[int | None] = mapped_column(ForeignKey("admins.admin_id"), nullable=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"), nullable=True)
@@ -161,7 +161,7 @@ class AuditLog(Base, CreatedAtMixin):
 class PrintJob(Base, TimestampMixin):
     __tablename__ = "print_jobs"
 
-    job_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    job_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     order_id: Mapped[int] = mapped_column(
         ForeignKey("orders.order_id", ondelete="CASCADE"),
         nullable=False,
@@ -184,7 +184,7 @@ class PrintJob(Base, TimestampMixin):
 class WantEvent(Base, CreatedAtMixin):
     __tablename__ = "want_events"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     product_id: Mapped[int] = mapped_column(
         ForeignKey("products.product_id", ondelete="CASCADE"),
         nullable=False,

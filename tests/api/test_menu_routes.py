@@ -96,3 +96,25 @@ async def test_menu_cache_prevents_immediate_changes(db_session) -> None:
             assert third.json()["categories"][0]["products"][0]["name"] == "焙香乌龙奶茶"
     finally:
         app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_menu_cache_invalidate_on_inventory_change(db_session) -> None:
+    invalidate_menu_cache()
+    product = await _prepare_basic_menu(db_session)
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/v1/menu")
+            assert first.status_code == 200
+            assert first.json()["categories"][0]["products"][0]["inventory_status"] == "in_stock"
+
+            product.inventory_status = "sold_out"
+            await db_session.flush()
+
+            second = await client.get("/api/v1/menu")
+            assert second.json()["categories"][0]["products"][0]["inventory_status"] == "sold_out"
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
