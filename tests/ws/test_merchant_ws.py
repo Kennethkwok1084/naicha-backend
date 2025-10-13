@@ -75,3 +75,21 @@ async def test_merchant_ws_missing_token_results_close(db_session) -> None:
     assert websocket.accepted is False
     assert websocket.closed is not None
     assert websocket.closed[0] == status.WS_1008_POLICY_VIOLATION
+
+
+@pytest.mark.asyncio
+async def test_merchant_notifier_broadcasts_to_multiple_connections() -> None:
+    message = {"type": "order.paid", "order": {"order_id": 1}}
+    socket_a = StubWebSocket(token="a")
+    socket_b = StubWebSocket(token="b")
+    await merchant_notifier.register(socket_a)
+    await merchant_notifier.register(socket_b)
+
+    try:
+        await merchant_notifier.broadcast(message)
+        assert socket_a.sent_messages[0] == message
+        assert socket_b.sent_messages[0] == message
+    finally:
+        await merchant_notifier.unregister(socket_a)
+        await merchant_notifier.unregister(socket_b)
+        assert not merchant_notifier._connections  # type: ignore[attr-defined]

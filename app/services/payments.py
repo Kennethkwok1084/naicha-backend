@@ -49,7 +49,12 @@ class PaymentService:
         notify_data = json.loads(payload.model_dump_json())
         status_changed = False
 
-        async with self._session.begin():
+        if self._session.in_transaction():
+            transaction_ctx = self._session.begin_nested()
+        else:
+            transaction_ctx = self._session.begin()
+
+        async with transaction_ctx:
             order = await self._load_order_for_update(payload.order_number)
             if order is None:
                 raise PaymentOrderNotFoundError("Order not found for payment notification.")
@@ -83,6 +88,7 @@ class PaymentService:
             await self._session.flush()
 
         if status_changed:
+            await self._session.refresh(order)
             await merchant_notifier.broadcast(self._build_broadcast_payload(order))
 
         return {"status": "SUCCESS"}

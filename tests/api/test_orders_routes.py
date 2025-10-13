@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
@@ -114,6 +116,89 @@ async def test_create_order_api_with_user_token(db_session) -> None:
             assert second.json()["order_id"] == order_id
     finally:
         app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_create_order_api_idempotency_under_concurrency(model_test_engine) -> None:
+    session_factory = async_sessionmaker(model_test_engine, expire_on_commit=False)
+
+    PRODUCT_ID = 502
+    SPEC_OPTION_ID = 504
+
+    async def _seed_concurrency_menu(session):
+        category = Category(category_id=501, name="并发特调", sort_order=1)
+        product = Product(
+            product_id=PRODUCT_ID,
+            category_id=category.category_id,
+            name="并发奶茶",
+            description="压力测试专用",
+            base_price=Decimal("15.00"),
+            status="active",
+            inventory_status="in_stock",
+        )
+        group = SpecGroup(group_id=503, name="加料-并发", sort_order=1)
+        option = SpecOption(
+            option_id=SPEC_OPTION_ID,
+            group_id=group.group_id,
+            name="燕麦",
+            price_modifier=Decimal("1.00"),
+            inventory_status="in_stock",
+            sort_order=1,
+        )
+        mapping = ProductSpecMapping(
+            mapping_id=504,
+            product_id=product.product_id,
+            group_id=group.group_id,
+        )
+        user = User(user_id=500, open_id="user-concurrent")
+        session.add_all([category, product, group, option, mapping, user])
+        await session.flush()
+        await session.commit()
+
+    token = create_access_token(subject="500", scope=TokenScope.USER)
+
+    async def override_session():
+        async with session_factory() as session:
+            try:
+                yield session
+            finally:
+                await session.rollback()
+
+    app.dependency_overrides[get_async_session] = override_session
+
+    transport = ASGITransport(app=app)
+
+    async with session_factory() as session:
+        await _seed_concurrency_menu(session)
+
+    async def _invoke(idx: int):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post(
+                "/api/v1/orders",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Idempotency-Key": f"idem-concurrent-{idx}",
+                },
+                json={
+                    "items": [
+                        {"product_id": PRODUCT_ID, "quantity": 1, "spec_option_ids": [SPEC_OPTION_ID]},
+                    ],
+                    "order_type": "pickup",
+                    "notes": "并发下单",
+                },
+            )
+
+    try:
+        responses = await asyncio.gather(*[_invoke(i) for i in range(10)])
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+        if hasattr(transport, "close"):
+            transport.close()
+
+    assert all(response.status_code == 200 for response in responses)
+    payloads = [resp.json() for resp in responses]
+    order_ids = {payload["order_id"] for payload in payloads}
+    assert len(order_ids) == 10
 
 
 @pytest.mark.asyncio
