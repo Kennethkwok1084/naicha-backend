@@ -537,7 +537,7 @@
   - 401 Invalid signature. —— 回调签名校验失败
   - 404 Order not found for payment notification. —— 订单不存在或已删除
   - 409 Payment amount mismatches order total. —— 支付金额与订单不一致
-- **副作用**：写库 `payment_records`、`orders.status=paid`、补写 `print_jobs`、触发商户 WS 推送
+- **副作用**：写库 `payment_records`、`orders.status=paid`、补写 `print_jobs`、触发商户 WS 推送、累计会员积分（满 10 自动发放 `free_any_drink` 券）
 - **审计记录**：暂不写入
 - **观测指标**：待补（计划 `payment_callback_total`、`payment_callback_fail_total`、`payment_callback_latency_ms`）
 - **测试清单**：

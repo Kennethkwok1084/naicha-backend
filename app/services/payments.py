@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.settings import Settings
 from app.models.orders import Order, PaymentRecord, PrintJob
 from app.schemas.payment import WechatPaymentNotifySchema
+from app.services.loyalty import LoyaltyService
 from app.ws.manager import merchant_notifier
 
 
@@ -86,6 +87,7 @@ class PaymentService:
 
             await self._ensure_print_job(order)
             await self._session.flush()
+            await LoyaltyService(self._session).award_on_payment(order)
 
         if status_changed:
             await self._session.refresh(order)

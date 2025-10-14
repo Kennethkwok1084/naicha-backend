@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, CreatedAtMixin, TimestampMixin
+from app.db.base import BIGINT_PK, Base, CreatedAtMixin, TimestampMixin
 
 
 class Admin(Base, CreatedAtMixin):
@@ -70,7 +70,7 @@ class UserAddress(Base, TimestampMixin):
 class LoyaltyTransaction(Base, CreatedAtMixin):
     __tablename__ = "loyalty_transactions"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
@@ -93,7 +93,7 @@ class LoyaltyTransaction(Base, CreatedAtMixin):
 class Coupon(Base, CreatedAtMixin):
     __tablename__ = "coupons"
 
-    coupon_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    coupon_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
