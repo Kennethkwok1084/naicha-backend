@@ -127,6 +127,14 @@ RATE_LIMIT_DEFAULT=300/minute
 
 ---
 
+### 生产部署要点
+
+- **准备 Secret**：部署前执行一次 `kubectl create secret generic naicha-api-secrets --from-literal=...`，包含数据库、Redis、打印服务等敏感变量（具体命令见 `infra/README.md`）。
+- **基础服务**：确保 Redis 与 PgBouncer 可用，并与 `CELERY_*`、`WS_BROADCAST_URL`、`DATABASE_PROXY_URL` 对应。
+- **发布流程**：`kubectl apply -f infra/k8s/deployment.yaml`、`infra/k8s/service.yaml` 与 `infra/k8s/worker-deployment.yaml`，再通过 `kubectl rollout restart` 滚动更新 API 与 Worker。
+
+---
+
 ## 运行与常用脚本
 
 ```bash

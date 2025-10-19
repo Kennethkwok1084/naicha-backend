@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: naicha-worker
+  labels:
+    app: naicha-worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: naicha-worker
+  template:
+    metadata:
+      labels:
+        app: naicha-worker
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: worker
+          image: ghcr.io/your-org/naicha-backend:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - app.workers.celery_app:celery_app
+            - worker
+            - --loglevel=info
+          envFrom:
+            - secretRef:
+                name: naicha-api-secrets
+          env:
+            - name: APP_ENV
+              value: prod
+            - name: CELERY_DEFAULT_QUEUE
+              value: default
+            - name: PRINT_JOB_QUEUE_NAME
+              value: print_jobs
+            - name: PRINTER_TIMEOUT_SECONDS
+              value: "5"
+            - name: MENU_CACHE_TTL_SECONDS
+              value: "240"
+            - name: MERCHANT_WS_RECENT_MINUTES
+              value: "5"
+            - name: RATE_LIMIT_DEFAULT
+              value: 300/minute
