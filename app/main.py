@@ -17,9 +17,13 @@ configure_logging(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.ws.manager import merchant_notifier
+
+    await merchant_notifier.startup()
     try:
         yield
     finally:
+        await merchant_notifier.shutdown()
         await dispose_engine()
 
 

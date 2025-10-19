@@ -27,7 +27,6 @@ def invalidate_menu_cache() -> None:
 
 class MenuService:
     CACHE_KEY = "menu"
-    CACHE_TTL_SECONDS = 240
 
     def __init__(self, session: AsyncSession, settings: Settings):
         self._session = session
@@ -177,5 +176,6 @@ class MenuService:
         return payload
 
     def _store_to_cache(self, payload: dict[str, Any]) -> None:
-        expires_at = time.time() + self.CACHE_TTL_SECONDS
+        ttl = max(self._settings.menu_cache_ttl_seconds, 0)
+        expires_at = time.time() + ttl
         _MENU_CACHE[self.CACHE_KEY] = (expires_at, payload)

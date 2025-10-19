@@ -11,11 +11,9 @@ from app.db.session import get_async_session
 from app.models.orders import Order
 from app.services.auth import AuthService
 from app.ws.manager import merchant_notifier
+from app.core.settings import Settings, get_settings
 
 router = APIRouter()
-
-RECENT_MINUTES = 5
-
 
 @router.websocket("/ws/merchant")
 async def merchant_ws_gateway(
@@ -52,7 +50,9 @@ async def merchant_ws_gateway(
     await websocket.accept()
     await merchant_notifier.register(websocket)
     await websocket.send_json({"type": "connection.ready", "admin_id": admin.admin_id})
-    await _send_recent_orders(session, websocket)
+    app_state = getattr(getattr(websocket, "app", None), "state", None)
+    settings = getattr(app_state, "settings", get_settings())
+    await _send_recent_orders(session, websocket, settings)
 
     try:
         while True:
@@ -71,8 +71,12 @@ async def merchant_ws_gateway(
         await merchant_notifier.unregister(websocket)
 
 
-async def _send_recent_orders(session: AsyncSession, websocket: WebSocket) -> None:
-    cutoff = datetime.now(tz=UTC) - timedelta(minutes=RECENT_MINUTES)
+async def _send_recent_orders(
+    session: AsyncSession,
+    websocket: WebSocket,
+    settings: Settings,
+) -> None:
+    cutoff = datetime.now(tz=UTC) - timedelta(minutes=settings.merchant_ws_recent_minutes)
     stmt = (
         select(Order)
         .where(Order.status == "paid", Order.updated_at >= cutoff)

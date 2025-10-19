@@ -17,13 +17,11 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
 
-    secret_key: str = Field(default="change_me", alias="SECRET_KEY")
+    secret_key: str = Field(alias="SECRET_KEY")
     jwt_expire_minutes: int = Field(default=43200, alias="JWT_EXPIRE_MINUTES")
 
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:Onjuju1084@localhost:5432/naicha",
-        alias="DATABASE_URL",
-    )
+    database_url: str = Field(alias="DATABASE_URL")
+    database_proxy_url: str | None = Field(default=None, alias="DATABASE_PROXY_URL")
     pgbouncer_host: str = Field(default="localhost", alias="PGBOUNCER_HOST")
     pgbouncer_port: int = Field(default=5432, alias="PGBOUNCER_PORT")
 
@@ -40,19 +38,49 @@ class Settings(BaseSettings):
     print_retry_max: int = Field(default=5, alias="PRINT_RETRY_MAX")
     guest_session_ttl_minutes: int = Field(default=43200, alias="GUEST_SESSION_TTL_MINUTES")
 
+    menu_cache_ttl_seconds: int = Field(default=240, alias="MENU_CACHE_TTL_SECONDS")
+    merchant_ws_recent_minutes: int = Field(default=5, alias="MERCHANT_WS_RECENT_MINUTES")
+
+    celery_broker_url: str = Field(default="redis://localhost:6379/0", alias="CELERY_BROKER_URL")
+    celery_result_backend: str | None = Field(default=None, alias="CELERY_RESULT_BACKEND")
+    celery_default_queue: str = Field(default="default", alias="CELERY_DEFAULT_QUEUE")
+    print_job_queue_name: str = Field(default="print_jobs", alias="PRINT_JOB_QUEUE_NAME")
+    printer_webhook_url: str | None = Field(default=None, alias="PRINTER_WEBHOOK_URL")
+    printer_webhook_token: str | None = Field(default=None, alias="PRINTER_WEBHOOK_TOKEN")
+    printer_timeout_seconds: int = Field(default=5, alias="PRINTER_TIMEOUT_SECONDS")
+
+    ws_broadcast_url: str | None = Field(default=None, alias="WS_BROADCAST_URL")
+    ws_broadcast_channel: str = Field(default="ws:merchant:broadcast", alias="WS_BROADCAST_CHANNEL")
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     allowed_origins_raw: str = Field(
         default="http://localhost:3000,http://localhost:5173", alias="ALLOWED_ORIGINS"
     )
+    rate_limit_default: str = Field(default="300/minute", alias="RATE_LIMIT_DEFAULT")
 
     @field_validator("allowed_origins_raw", mode="before")
     def ensure_string(cls, value: str) -> str:
         return value or ""
 
+    @field_validator("secret_key", "database_url", "celery_broker_url", mode="before")
+    def ensure_required(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("该配置为必填项，不允许为空。")
+        return value
+
     @property
     def allowed_origins(self) -> list[str]:
         origins = [origin.strip() for origin in self.allowed_origins_raw.split(",")]
         return [origin for origin in origins if origin]
+
+    @property
+    def rate_limit_default_limits(self) -> list[str]:
+        limits = [limit.strip() for limit in self.rate_limit_default.split(",")]
+        return [limit for limit in limits if limit]
+
+    @property
+    def database_runtime_url(self) -> str:
+        return self.database_proxy_url or self.database_url
 
     @property
     def alembic_sync_url(self) -> str:
@@ -61,6 +89,10 @@ class Settings(BaseSettings):
         if "+psycopg2" in self.database_url:
             return self.database_url.replace("+psycopg2", "+psycopg")
         return self.database_url
+
+    @property
+    def resolved_ws_broadcast_url(self) -> str | None:
+        return self.ws_broadcast_url or self.celery_broker_url
 
 
 @lru_cache

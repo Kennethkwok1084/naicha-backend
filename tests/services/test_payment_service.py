@@ -20,13 +20,24 @@ from app.services.payments import (
 from app.ws import manager as manager_module
 
 
+@pytest.fixture
+def enqueue_spy(monkeypatch):
+    calls: list[int] = []
+
+    def fake(job_id: int) -> None:
+        calls.append(job_id)
+
+    monkeypatch.setattr("app.services.payments.enqueue_print_job", fake)
+    return calls
+
+
 def _sign(body: bytes) -> str:
     settings = get_settings()
     return hmac.new(settings.secret_key.encode("utf-8"), body, "sha256").hexdigest()
 
 
 @pytest.mark.asyncio
-async def test_payment_service_amount_mismatch(db_session, monkeypatch) -> None:
+async def test_payment_service_amount_mismatch(db_session, monkeypatch, enqueue_spy) -> None:
     order = Order(
         order_id=10,
         order_number="202510170010-NA0001",
@@ -65,10 +76,11 @@ async def test_payment_service_amount_mismatch(db_session, monkeypatch) -> None:
     )
     assert payment.scalars().first() is None
     assert fake_broadcast.calls == []
+    assert enqueue_spy == []
 
 
 @pytest.mark.asyncio
-async def test_payment_service_nested_transaction(db_session, monkeypatch) -> None:
+async def test_payment_service_nested_transaction(db_session, monkeypatch, enqueue_spy) -> None:
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
     async with session_factory() as setup_session:
@@ -135,6 +147,7 @@ async def test_payment_service_nested_transaction(db_session, monkeypatch) -> No
         assert payment_record is not None
 
     assert len(broadcasts) == 1
+    assert len(enqueue_spy) == 1
 
 
 async def _prepare_order_for_loyalty(session, *, user_id: int, quantity: int, order_id: int) -> Order:
@@ -162,7 +175,7 @@ async def _prepare_order_for_loyalty(session, *, user_id: int, quantity: int, or
 
 
 @pytest.mark.asyncio
-async def test_payment_service_awards_loyalty_points(db_session, monkeypatch) -> None:
+async def test_payment_service_awards_loyalty_points(db_session, monkeypatch, enqueue_spy) -> None:
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
     async with session_factory() as setup_session:
@@ -211,6 +224,7 @@ async def test_payment_service_awards_loyalty_points(db_session, monkeypatch) ->
             )
         )
         assert award_tx is not None
+        assert len(enqueue_spy) == 1
 
         coupon = await session.scalar(
             select(Coupon).where(Coupon.user_id == 300)
@@ -219,7 +233,9 @@ async def test_payment_service_awards_loyalty_points(db_session, monkeypatch) ->
 
 
 @pytest.mark.asyncio
-async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(db_session, monkeypatch) -> None:
+async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
+    db_session, monkeypatch, enqueue_spy
+) -> None:
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
     async with session_factory() as setup_session:
@@ -283,3 +299,4 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(db_sessio
             )).scalars()
         )
         assert len(coupon_tx) == 1
+        assert enqueue_spy  # 多次通知可触发多次入队，至少保证有入队行为

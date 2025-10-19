@@ -15,6 +15,7 @@ from app.models.orders import Order, PaymentRecord, PrintJob
 from app.schemas.payment import WechatPaymentNotifySchema
 from app.services.loyalty import LoyaltyService
 from app.ws.manager import merchant_notifier
+from app.workers import enqueue_print_job
 
 
 class PaymentServiceError(Exception):
@@ -55,6 +56,8 @@ class PaymentService:
         else:
             transaction_ctx = self._session.begin()
 
+        print_job: PrintJob | None = None
+
         async with transaction_ctx:
             order = await self._load_order_for_update(payload.order_number)
             if order is None:
@@ -85,13 +88,16 @@ class PaymentService:
                 order.updated_at = datetime.now(tz=UTC)
                 status_changed = True
 
-            await self._ensure_print_job(order)
+            print_job = await self._ensure_print_job(order)
             await self._session.flush()
             await LoyaltyService(self._session).award_on_payment(order)
 
         if status_changed:
             await self._session.refresh(order)
             await merchant_notifier.broadcast(self._build_broadcast_payload(order))
+
+        if print_job is not None and print_job.status == "pending":
+            enqueue_print_job(print_job.job_id)
 
         return {"status": "SUCCESS"}
 
@@ -120,14 +126,17 @@ class PaymentService:
         if order_total != incoming:
             raise PaymentConflictError("Payment amount mismatches order total.")
 
-    async def _ensure_print_job(self, order: Order) -> None:
+    async def _ensure_print_job(self, order: Order) -> PrintJob:
         result = await self._session.execute(
             select(PrintJob).where(PrintJob.order_id == order.order_id)
         )
         job = result.scalar_one_or_none()
         if job is not None:
-            return
-        self._session.add(PrintJob(order_id=order.order_id))
+            return job
+        job = PrintJob(order_id=order.order_id, status="pending")
+        self._session.add(job)
+        await self._session.flush()
+        return job
 
     @staticmethod
     def _build_broadcast_payload(order: Order) -> dict[str, Any]:

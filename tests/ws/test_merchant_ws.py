@@ -79,6 +79,7 @@ async def test_merchant_ws_missing_token_results_close(db_session) -> None:
 
 @pytest.mark.asyncio
 async def test_merchant_notifier_broadcasts_to_multiple_connections() -> None:
+    await merchant_notifier.shutdown()
     message = {"type": "order.paid", "order": {"order_id": 1}}
     socket_a = StubWebSocket(token="a")
     socket_b = StubWebSocket(token="b")
@@ -93,3 +94,4 @@ async def test_merchant_notifier_broadcasts_to_multiple_connections() -> None:
         await merchant_notifier.unregister(socket_a)
         await merchant_notifier.unregister(socket_b)
         assert not merchant_notifier._connections  # type: ignore[attr-defined]
+    await merchant_notifier.shutdown()

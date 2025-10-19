@@ -2,7 +2,7 @@ PYTHON ?= python
 POETRY ?= poetry
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test
+.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -26,6 +26,9 @@ coverage:
 
 dev:
 	$(UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000
+
+worker:
+	celery -A app.workers.celery_app:celery_app worker --loglevel=info
 
 migrate:
 	alembic revision --autogenerate -m "describe changes"

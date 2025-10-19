@@ -14,7 +14,7 @@ from app.core.settings import get_settings
 settings = get_settings()
 
 engine: AsyncEngine = create_async_engine(
-    settings.database_url,
+    settings.database_runtime_url,
     future=True,
     echo=settings.app_env == "dev",
 )

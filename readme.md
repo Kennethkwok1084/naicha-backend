@@ -88,13 +88,14 @@ uvicorn app.main:app --reload --port 8000
 
 ## 环境变量
 
-见 `.env.example`（关键项）：
+见 `.env.example`（本地开发示例，生产环境请通过 Secret 注入）：
 
 ```
 APP_ENV=dev
-SECRET_KEY=change_me
+SECRET_KEY=__GENERATE_ME__
 JWT_EXPIRE_MINUTES=43200
 DATABASE_URL=postgresql+asyncpg://user:pass@pgbouncer:6432/naicha
+DATABASE_PROXY_URL=postgresql+asyncpg://user:pass@pgbouncer:6432/naicha
 PGBOUNCER_HOST=pgbouncer
 PGBOUNCER_PORT=6432
 PROMETHEUS_ENABLED=true
@@ -108,7 +109,21 @@ RESERVATION_REMINDER_MINUTES=15
 STATIC_MATCH_TIME_WINDOW_MIN=5
 DELIVERY_RADIUS_M=1500
 PRINT_RETRY_MAX=5
+MENU_CACHE_TTL_SECONDS=240
+MERCHANT_WS_RECENT_MINUTES=5
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/1
+CELERY_DEFAULT_QUEUE=default
+PRINT_JOB_QUEUE_NAME=print_jobs
+PRINTER_WEBHOOK_URL=
+PRINTER_WEBHOOK_TOKEN=
+PRINTER_TIMEOUT_SECONDS=5
+WS_BROADCAST_URL=redis://redis:6379/0
+WS_BROADCAST_CHANNEL=ws:merchant:broadcast
+RATE_LIMIT_DEFAULT=300/minute
 ```
+
+> ⚠️ **生产环境要求**：`SECRET_KEY`、`DATABASE_URL`/`DATABASE_PROXY_URL`、`CELERY_*`、`WS_BROADCAST_*`、`PRINTER_*` 等敏感配置必须来自 K8s Secret、Vault 或云厂商密钥管控，禁止在镜像与 Git 仓库中出现明文。
 
 ---
 
@@ -126,6 +141,7 @@ make updb      # 应用迁移（alembic upgrade head）
 
 # 本地启动
 make dev       # uvicorn --reload
+make worker    # Celery worker（处理打印等后台任务）
 ```
 
 ---
@@ -354,4 +370,3 @@ tests/            # 单元/集成测试
 
 ## 许可证
 本项目默认 **私有**；如需开源请替换为合适的许可证（例如 MIT / Apache-2.0）。
-

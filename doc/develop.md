@@ -11,6 +11,9 @@
 
 * 项目骨架：`app/ (api|core|models|schemas|services|workers|utils|ws)`、`migrations/`、`tests/`、`infra/`、`scripts/`。
 * 配置系统：env→`settings`（JWT、DB、WAF 信任代理、Feature Flags 默认值）。
+  * 应用运行阶段优先使用 `DATABASE_PROXY_URL`（指向 PgBouncer）；若留空则回退至直连 `DATABASE_URL`，迁移脚本仍走后者。
+  * WebSocket 广播复用 `WS_BROADCAST_URL`（默认与 `CELERY_BROKER_URL` 一致，需 Redis 支撑）；频道名可通过 `WS_BROADCAST_CHANNEL` 调整。
+  * 缓存/限流参数从环境注入：`MENU_CACHE_TTL_SECONDS`、`MERCHANT_WS_RECENT_MINUTES`、`RATE_LIMIT_DEFAULT`（逗号分隔多条规则）。
 * 基础中间件：结构化日志（含 `trace_id`）、统一异常（HTTP/验证/DB）、CORS 白名单、基本限流（/orders、/payments/notify、/products/*/want）。
 * 健康检查：`/healthz`、`/metrics`（Prometheus 开关）。
 * **容灾基线**：确定 **主在云端** 的目标拓扑与 SLO（/menu P95≤40ms、/orders P95≤200ms、WS≤5s）。

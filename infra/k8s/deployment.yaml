@@ -31,11 +31,55 @@ spec:
                 secretKeyRef:
                   name: naicha-api-secrets
                   key: DATABASE_URL
+            - name: DATABASE_PROXY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: naicha-api-secrets
+                  key: DATABASE_PROXY_URL
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: naicha-api-secrets
+                  key: CELERY_BROKER_URL
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: naicha-api-secrets
+                  key: CELERY_RESULT_BACKEND
+            - name: WS_BROADCAST_URL
+              valueFrom:
+                secretKeyRef:
+                  name: naicha-api-secrets
+                  key: WS_BROADCAST_URL
+            - name: PRINTER_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: naicha-api-secrets
+                  key: PRINTER_WEBHOOK_URL
+            - name: PRINTER_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: naicha-api-secrets
+                  key: PRINTER_WEBHOOK_TOKEN
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: naicha-api-secrets
                   key: SECRET_KEY
+            - name: CELERY_DEFAULT_QUEUE
+              value: default
+            - name: PRINT_JOB_QUEUE_NAME
+              value: print_jobs
+            - name: PRINTER_TIMEOUT_SECONDS
+              value: "5"
+            - name: WS_BROADCAST_CHANNEL
+              value: ws:merchant:broadcast
+            - name: MENU_CACHE_TTL_SECONDS
+              value: "240"
+            - name: MERCHANT_WS_RECENT_MINUTES
+              value: "5"
+            - name: RATE_LIMIT_DEFAULT
+              value: 300/minute
           ports:
             - containerPort: 8000
               name: http
