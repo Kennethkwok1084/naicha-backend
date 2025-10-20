@@ -11,12 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.accounts import Coupon, LoyaltyTransaction, User
-from app.models.orders import Order, OrderItem, PaymentRecord
+from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
 from app.schemas import WechatPaymentNotifySchema
 from app.services.payments import (
     PaymentConflictError,
     PaymentService,
 )
+from app.workers.print_jobs import recover_print_jobs
 from app.ws import manager as manager_module
 
 
@@ -300,3 +301,82 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         )
         assert len(coupon_tx) == 1
         assert enqueue_spy  # 多次通知可触发多次入队，至少保证有入队行为
+
+
+@pytest.mark.asyncio
+async def test_payment_commit_but_enqueue_failed(db_session, monkeypatch) -> None:
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    monkeypatch.setattr("app.workers.print_jobs.async_session_factory", session_factory)
+
+    settings = get_settings()
+
+    async with session_factory() as setup_session:
+        order = Order(
+            order_id=910,
+            order_number="202510170910-NA0001",
+            total_price=Decimal("18.00"),
+            status="pending_payment",
+            order_type="pickup",
+        )
+        setup_session.add(order)
+        setup_session.add(
+            OrderItem(
+                item_id=9101,
+                order_id=order.order_id,
+                product_id=None,
+                product_name="测试饮品",
+                quantity=1,
+                unit_price=Decimal("18.00"),
+            )
+        )
+        await setup_session.flush()
+        order_id = order.order_id
+        order_number = order.order_number
+        await setup_session.commit()
+
+    async def noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
+
+    def explode_enqueue(_job_id: int) -> None:
+        raise RuntimeError("enqueue crashed")
+
+    monkeypatch.setattr("app.services.payments.enqueue_print_job", explode_enqueue)
+
+    payload = WechatPaymentNotifySchema(
+        event_id="evt_crash",
+        order_number=order_number,
+        transaction_id="txn_crash",
+        amount=18.0,
+        currency="CNY",
+        channel="wechat_jsapi",
+        status="SUCCESS",
+        paid_at=datetime.now(tz=UTC),
+    )
+    raw_body = payload.model_dump_json().encode("utf-8")
+
+    async with session_factory() as session:
+        service = PaymentService(session, settings)
+        response = await service.handle_wechat_notification(
+            payload,
+            raw_body=raw_body,
+            signature=_sign(raw_body),
+        )
+        assert response["status"] == "SUCCESS"
+
+    async with session_factory() as verify_session:
+        job = await verify_session.scalar(
+            select(PrintJob).where(PrintJob.order_id == order_id)
+        )
+        assert job is not None
+        assert job.status == "pending"
+        assert job.next_try_at is not None
+        job_id = job.job_id
+
+    recovered_ids = await recover_print_jobs(
+        limit=10,
+        now=datetime.now(tz=UTC),
+        settings=settings,
+    )
+    assert job_id in recovered_ids

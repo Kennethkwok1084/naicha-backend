@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog import get_logger
 
 from app.core.settings import Settings
 from app.models.orders import Order, PaymentRecord, PrintJob
@@ -16,6 +17,8 @@ from app.schemas.payment import WechatPaymentNotifySchema
 from app.services.loyalty import LoyaltyService
 from app.ws.manager import merchant_notifier
 from app.workers import enqueue_print_job
+
+logger = get_logger(__name__)
 
 
 class PaymentServiceError(Exception):
@@ -50,6 +53,8 @@ class PaymentService:
 
         notify_data = json.loads(payload.model_dump_json())
         status_changed = False
+        broadcast_payload: dict[str, Any] | None = None
+        job_to_enqueue: int | None = None
 
         if self._session.in_transaction():
             transaction_ctx = self._session.begin_nested()
@@ -89,15 +94,36 @@ class PaymentService:
                 status_changed = True
 
             print_job = await self._ensure_print_job(order)
+            if status_changed:
+                broadcast_payload = self._build_broadcast_payload(order)
+
+            if print_job is not None and print_job.status in {"pending", "failed"}:
+                print_job.status = "pending"
+                print_job.next_try_at = datetime.now(tz=UTC)
+                job_to_enqueue = print_job.job_id
+
             await self._session.flush()
             await LoyaltyService(self._session).award_on_payment(order)
 
-        if status_changed:
-            await self._session.refresh(order)
-            await merchant_notifier.broadcast(self._build_broadcast_payload(order))
+        if status_changed and broadcast_payload is not None:
+            try:
+                await merchant_notifier.broadcast(broadcast_payload)
+            except Exception:
+                logger.exception(
+                    "payment.broadcast_failed",
+                    order_number=payload.order_number,
+                    txn_id=payload.transaction_id,
+                )
 
-        if print_job is not None and print_job.status == "pending":
-            enqueue_print_job(print_job.job_id)
+        if job_to_enqueue is not None:
+            try:
+                enqueue_print_job(job_to_enqueue)
+            except Exception:
+                logger.exception(
+                    "payment.print_enqueue_failed",
+                    job_id=job_to_enqueue,
+                    order_number=payload.order_number,
+                )
 
         return {"status": "SUCCESS"}
 

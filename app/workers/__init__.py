@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import threading
+
 from celery import Celery
 from celery.exceptions import CeleryError
 from structlog import get_logger
@@ -26,15 +28,26 @@ def enqueue_print_job(job_id: int) -> None:
     except Exception as exc:
         logger.exception("print_job.enqueue_unexpected_error", job_id=job_id)
 
+    _dispatch_local(job_id)
+
+
+def _dispatch_local(job_id: int) -> None:
+    async def _run_job() -> None:
+        try:
+            await execute_print_job(job_id)
+        except Exception as exc:  # pragma: no cover - 已在线程中记录
+            logger.exception("print_job.local_execution_failed", job_id=job_id, error=str(exc))
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
 
     if loop and loop.is_running():
-        loop.create_task(execute_print_job(job_id))
+        loop.create_task(_run_job())
     else:
-        asyncio.run(execute_print_job(job_id))
+        thread = threading.Thread(target=lambda: asyncio.run(_run_job()), daemon=True)
+        thread.start()
 
 
 __all__ = ["enqueue_print_job", "get_celery_app", "process_print_job"]

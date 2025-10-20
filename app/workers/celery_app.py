@@ -16,6 +16,7 @@ celery_app.conf.update(
     task_default_queue=settings.celery_default_queue,
     task_routes={
         "app.workers.tasks.process_print_job": {"queue": settings.print_job_queue_name},
+        "app.workers.tasks.run_print_job_recovery": {"queue": settings.print_job_queue_name},
     },
     task_serializer="json",
     result_serializer="json",
@@ -23,4 +24,15 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
 )
+
+beat_schedule = dict(getattr(celery_app.conf, "beat_schedule", {}))
+beat_schedule.setdefault(
+    "print_jobs_recovery",
+    {
+        "task": "app.workers.tasks.run_print_job_recovery",
+        "schedule": settings.print_recovery_interval_seconds,
+    },
+)
+celery_app.conf.beat_schedule = beat_schedule
+
 celery_app.autodiscover_tasks(["app.workers"])

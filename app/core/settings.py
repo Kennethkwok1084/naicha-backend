@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     static_match_time_window_min: int = Field(default=5, alias="STATIC_MATCH_TIME_WINDOW_MIN")
     delivery_radius_m: int = Field(default=1500, alias="DELIVERY_RADIUS_M")
     print_retry_max: int = Field(default=5, alias="PRINT_RETRY_MAX")
+    print_recovery_interval_seconds: int = Field(
+        default=60, alias="PRINT_RECOVERY_INTERVAL_SECONDS"
+    )
     guest_session_ttl_minutes: int = Field(default=43200, alias="GUEST_SESSION_TTL_MINUTES")
 
     menu_cache_ttl_seconds: int = Field(default=240, alias="MENU_CACHE_TTL_SECONDS")

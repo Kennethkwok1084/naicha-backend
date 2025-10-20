@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Sequence
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import and_, case, or_, select
 from structlog import get_logger
 
 from app.core.settings import Settings, get_settings
@@ -101,6 +101,63 @@ async def _acquire_job(session, job_id: int) -> PrintJob | None:
 async def _load_order_items(session, order_id: int) -> Sequence[OrderItem]:
     result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
     return result.scalars().all()
+
+
+async def recover_print_jobs(
+    *,
+    limit: int = 50,
+    now: datetime | None = None,
+    settings: Settings | None = None,
+) -> list[int]:
+    reference_time = now or datetime.now(tz=UTC)
+    current_settings = settings or get_settings()
+    interval_seconds = max(current_settings.print_recovery_interval_seconds, 1)
+    next_try_time = reference_time + timedelta(seconds=interval_seconds)
+    jobs_table = PrintJob.__table__
+
+    conditions = and_(
+        or_(
+            jobs_table.c.status == "pending",
+            and_(jobs_table.c.status == "failed", jobs_table.c.next_try_at.is_not(None)),
+        ),
+        or_(jobs_table.c.next_try_at.is_(None), jobs_table.c.next_try_at <= reference_time),
+    )
+
+    if limit <= 0:
+        return []
+
+    nulls_rank = case(
+        (jobs_table.c.next_try_at.is_(None), 0),
+        else_=1,
+    )
+
+    candidate_stmt = (
+        select(jobs_table.c.job_id)
+        .where(conditions)
+        .order_by(nulls_rank, jobs_table.c.next_try_at.asc(), jobs_table.c.job_id)
+        .limit(limit)
+    )
+
+    update_stmt = (
+        jobs_table.update()
+        .where(jobs_table.c.job_id.in_(candidate_stmt))
+        .values(
+            next_try_at=next_try_time,
+            status=case(
+                (jobs_table.c.status == "failed", "pending"),
+                else_=jobs_table.c.status,
+            ),
+        )
+        .returning(jobs_table.c.job_id)
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            result = await session.execute(update_stmt)
+            job_ids = [row[0] for row in result.fetchall()]
+
+    job_ids.sort()
+    return job_ids
 
 
 def _next_retry_delay(try_count: int) -> timedelta:
