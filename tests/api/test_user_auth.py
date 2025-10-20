@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
-
 from app.api.routes.users import user_login
 from app.core.security import TokenScope, decode_access_token
 from app.db.session import get_async_session
@@ -10,6 +8,7 @@ from app.main import app
 from app.models.accounts import User
 from app.schemas import UserLoginRequestSchema
 from app.services.auth import AuthService
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 

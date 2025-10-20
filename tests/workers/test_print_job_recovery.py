@@ -5,12 +5,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
 from app.core.settings import get_settings
 from app.models.orders import Order, OrderItem, PrintJob
 from app.workers.print_jobs import recover_print_jobs
 from app.workers.tasks import trigger_print_job_recovery
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 @pytest.mark.asyncio

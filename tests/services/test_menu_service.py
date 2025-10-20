@@ -4,7 +4,6 @@ import time
 from decimal import Decimal
 
 import pytest
-
 from app.core.settings import get_settings
 from app.models import catalog as catalog_module
 from app.models.catalog import (
@@ -15,7 +14,7 @@ from app.models.catalog import (
     SpecGroup,
     SpecOption,
 )
-from app.services.menu import MenuService, _MENU_CACHE, invalidate_menu_cache
+from app.services.menu import _MENU_CACHE, MenuService, invalidate_menu_cache
 
 
 async def _seed_basic_menu(db_session) -> None:
@@ -111,7 +110,7 @@ async def test_menu_service_cache_expires(db_session) -> None:
     settings = get_settings().model_copy()
     service = MenuService(db_session, settings)
 
-    # 预先写入过期缓存，触发过期清理分支
+    # 预先写入过期缓存,触发过期清理分支
     _MENU_CACHE[MenuService.CACHE_KEY] = (time.time() - 1, {"stale": True})
     payload = await service.get_menu_payload()
 

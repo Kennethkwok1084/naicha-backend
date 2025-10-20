@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     @field_validator("secret_key", "database_url", "celery_broker_url", mode="before")
     def ensure_required(cls, value: str) -> str:
         if not value or not value.strip():
-            raise ValueError("该配置为必填项，不允许为空。")
+            raise ValueError("该配置为必填项,不允许为空。")
         return value
 
     @property

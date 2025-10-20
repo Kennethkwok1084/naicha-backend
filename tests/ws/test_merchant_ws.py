@@ -4,14 +4,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from fastapi import status
-from starlette.websockets import WebSocketDisconnect, WebSocketState
-
 from app.api.routes.ws import merchant_ws_gateway
 from app.core.security import TokenScope, create_access_token
 from app.models.accounts import Admin
 from app.models.orders import Order
 from app.ws.manager import merchant_notifier
+from fastapi import status
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 
 class StubWebSocket:

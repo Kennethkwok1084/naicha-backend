@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.core.settings import get_settings
 from app.models.shop import ShopProfile
 from app.services.shop import ShopProfileNotConfiguredError, ShopService

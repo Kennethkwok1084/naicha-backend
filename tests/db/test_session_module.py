@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import types
-
 import pytest
-
 from app.db import session as session_module
 
 

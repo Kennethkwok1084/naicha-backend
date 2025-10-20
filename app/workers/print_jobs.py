@@ -1,6 +1,7 @@
 from __future__ import annotations
+
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Sequence
 
 import httpx
 from sqlalchemy import and_, case, or_, select
@@ -18,11 +19,11 @@ class PrintJobError(Exception):
 
 
 class RetryablePrintJobError(PrintJobError):
-    """可重试异常，用于触发 Celery 自动重试。"""
+    """可重试异常,用于触发 Celery 自动重试。"""
 
 
 class NonRetryablePrintJobError(PrintJobError):
-    """不可重试异常，Worker 会记录失败并停止重试。"""
+    """不可重试异常,Worker 会记录失败并停止重试。"""
 
 
 async def execute_print_job(job_id: int, settings: Settings | None = None) -> None:
@@ -161,7 +162,7 @@ async def recover_print_jobs(
 
 
 def _next_retry_delay(try_count: int) -> timedelta:
-    # 简单指数退避，但限定最大 15 分钟，避免对打印服务造成压力。
+    # 简单指数退避,但限定最大 15 分钟,避免对打印服务造成压力。
     base_seconds = 2 ** max(try_count - 1, 0)
     return timedelta(seconds=min(base_seconds, 900))
 

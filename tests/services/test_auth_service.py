@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.core.security import hash_password
 from app.models.accounts import Admin, User
 from app.services.auth import AuthService

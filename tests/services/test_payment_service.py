@@ -5,11 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-
 from app.core.settings import get_settings
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
 from app.models.accounts import Coupon, LoyaltyTransaction, User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
 from app.schemas import WechatPaymentNotifySchema
@@ -19,6 +15,8 @@ from app.services.payments import (
 )
 from app.workers.print_jobs import recover_print_jobs
 from app.ws import manager as manager_module
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 @pytest.fixture
@@ -300,7 +298,7 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
             )).scalars()
         )
         assert len(coupon_tx) == 1
-        assert enqueue_spy  # 多次通知可触发多次入队，至少保证有入队行为
+        assert enqueue_spy  # 多次通知可触发多次入队,至少保证有入队行为
 
 
 @pytest.mark.asyncio

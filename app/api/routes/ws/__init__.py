@@ -7,11 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import InvalidTokenError, TokenScope, decode_access_token
+from app.core.settings import Settings, get_settings
 from app.db.session import get_async_session
 from app.models.orders import Order
 from app.services.auth import AuthService
 from app.ws.manager import merchant_notifier
-from app.core.settings import Settings, get_settings
 
 router = APIRouter()
 

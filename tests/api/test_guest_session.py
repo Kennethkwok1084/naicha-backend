@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
-from app.api.routes.guests import create_guest_session, get_guest_session_service
+from app.api.routes.guests import create_guest_session
 from app.db.session import get_async_session
 from app.main import app
 from app.models.orders import IdempotencyKey

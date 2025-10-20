@@ -15,8 +15,8 @@ from app.core.settings import Settings
 from app.models.orders import Order, PaymentRecord, PrintJob
 from app.schemas.payment import WechatPaymentNotifySchema
 from app.services.loyalty import LoyaltyService
-from app.ws.manager import merchant_notifier
 from app.workers import enqueue_print_job
+from app.ws.manager import merchant_notifier
 
 logger = get_logger(__name__)
 

@@ -10,8 +10,8 @@ from app.api.routes import (
     placeholders,
     shop,
     system,
-    ws,
     users,
+    ws,
 )
 
 api_router = APIRouter()
@@ -25,3 +25,4 @@ api_router.include_router(shop.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
 api_router.include_router(placeholders.router)
+api_router.include_router(ws.router)

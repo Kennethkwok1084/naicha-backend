@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-
 import threading
 
 from celery import Celery
@@ -25,7 +24,7 @@ def enqueue_print_job(job_id: int) -> None:
         return
     except CeleryError as exc:
         logger.error("print_job.enqueue_failed", job_id=job_id, error=str(exc))
-    except Exception as exc:
+    except Exception:
         logger.exception("print_job.enqueue_unexpected_error", job_id=job_id)
 
     _dispatch_local(job_id)

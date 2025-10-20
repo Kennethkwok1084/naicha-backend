@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-
 from app.api.routes.me import list_addresses
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
