@@ -38,6 +38,19 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             logger.info("print_job.already_done", job_id=job_id)
             return
 
+        if job.try_count >= current_settings.print_retry_max:
+            job.status = "failed"
+            job.last_error = f"达到最大重试次数 {current_settings.print_retry_max}"
+            job.next_try_at = None
+            await session.commit()
+            logger.error(
+                "print_job.retry_limit_reached",
+                job_id=job.job_id,
+                try_count=job.try_count,
+                retry_max=current_settings.print_retry_max,
+            )
+            raise NonRetryablePrintJobError(job.last_error)
+
         job.status = "processing"
         job.try_count += 1
         job.last_error = None

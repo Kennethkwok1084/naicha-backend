@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import re
 
 import pytest
 from app.core.settings import get_settings
@@ -119,3 +120,11 @@ async def test_initiate_payment_requires_owner(db_session) -> None:
             actor=other,
             request=OrderPaymentJsapiRequestSchema(payer_open_id="wx2"),
         )
+
+
+def test_generate_order_number_uniqueness() -> None:
+    pattern = re.compile(r"^\d{17}-NA[A-F0-9]{6}$")
+    numbers = {OrderService._generate_order_number() for _ in range(2000)}
+    assert len(numbers) == 2000
+    for order_number in numbers:
+        assert pattern.match(order_number), f"unexpected format: {order_number}"

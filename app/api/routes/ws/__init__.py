@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
@@ -53,11 +55,39 @@ async def merchant_ws_gateway(
     app_state = getattr(getattr(websocket, "app", None), "state", None)
     settings = getattr(app_state, "settings", get_settings())
     await _send_recent_orders(session, websocket, settings)
+    last_pong = datetime.now(tz=UTC)
+    ping_interval = 30
+    pong_grace = 5
+
+    async def heartbeat() -> None:
+        nonlocal last_pong
+        try:
+            while True:
+                await asyncio.sleep(ping_interval)
+                elapsed = datetime.now(tz=UTC) - last_pong
+                if elapsed.total_seconds() > ping_interval + pong_grace:
+                    with suppress(Exception):
+                        await websocket.close(
+                            code=status.WS_1011_INTERNAL_ERROR,
+                            reason="Heartbeat timeout",
+                        )
+                    break
+                try:
+                    await websocket.send_json({"type": "ping", "ts": datetime.now(tz=UTC).isoformat()})
+                except WebSocketDisconnect:
+                    break
+                except Exception:
+                    break
+        except asyncio.CancelledError:
+            raise
+
+    ping_task = asyncio.create_task(heartbeat())
 
     try:
         while True:
             try:
                 message = await websocket.receive_json()
+                last_pong = datetime.now(tz=UTC)
             except WebSocketDisconnect:
                 break
             except Exception:
@@ -67,7 +97,13 @@ async def merchant_ws_gateway(
 
             if message.get("type") == "ping":
                 await websocket.send_json({"type": "pong", "ts": datetime.now(tz=UTC).isoformat()})
+                last_pong = datetime.now(tz=UTC)
+            elif message.get("type") == "pong":
+                last_pong = datetime.now(tz=UTC)
     finally:
+        ping_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await ping_task
         await merchant_notifier.unregister(websocket)
 
 

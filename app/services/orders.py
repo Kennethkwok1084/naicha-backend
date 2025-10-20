@@ -409,5 +409,6 @@ class OrderService:
     def _generate_order_number() -> str:
         now = datetime.now(tz=UTC)
         timestamp = now.strftime("%Y%m%d%H%M%S")
-        suffix = secrets.randbelow(10_000)
-        return f"{timestamp}-NA{suffix:04d}"
+        millis = int(now.microsecond / 1000)
+        random_suffix = secrets.token_hex(3).upper()
+        return f"{timestamp}{millis:03d}-NA{random_suffix}"

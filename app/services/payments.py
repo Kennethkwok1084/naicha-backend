@@ -87,6 +87,12 @@ class PaymentService:
                     raw_notification_json=notify_data.get("raw_notification") or notify_data,
                 )
                 self._session.add(payment_record)
+            else:
+                logger.info(
+                    "payment.notification_replayed",
+                    order_number=payload.order_number,
+                    txn_id=payload.transaction_id,
+                )
 
             if order.status != "paid":
                 order.status = "paid"

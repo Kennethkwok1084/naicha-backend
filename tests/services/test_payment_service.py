@@ -9,6 +9,7 @@ from app.core.settings import get_settings
 from app.models.accounts import Coupon, LoyaltyTransaction, User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
 from app.schemas import WechatPaymentNotifySchema
+import app.services.payments
 from app.services.payments import (
     PaymentConflictError,
     PaymentService,
@@ -299,6 +300,78 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         )
         assert len(coupon_tx) == 1
         assert enqueue_spy  # 多次通知可触发多次入队,至少保证有入队行为
+
+
+@pytest.mark.asyncio
+async def test_payment_service_logs_replayed_notification(
+    db_session,
+    monkeypatch,
+    enqueue_spy,
+    caplog,
+) -> None:
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async with session_factory() as setup_session:
+        order = Order(
+            order_id=450,
+            order_number="202510170450-NA0001",
+            total_price=Decimal("18.00"),
+            status="pending_payment",
+            order_type="pickup",
+        )
+        setup_session.add(order)
+        setup_session.add(
+            OrderItem(
+                item_id=4501,
+                order_id=order.order_id,
+                product_id=None,
+                product_name="重放检测饮品",
+                quantity=1,
+                unit_price=Decimal("18.00"),
+            )
+        )
+        await setup_session.flush()
+        order_number = order.order_number
+        await setup_session.commit()
+
+    async def noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
+    info_calls: list[tuple[str, dict]] = []
+
+    original_info = app.services.payments.logger.info  # type: ignore[attr-defined]
+
+    def capture_info(event: str, **kwargs):
+        info_calls.append((event, kwargs))
+        return original_info(event, **kwargs)
+
+    monkeypatch.setattr("app.services.payments.logger.info", capture_info)
+
+    payload = WechatPaymentNotifySchema(
+        event_id="evt_replayed",
+        order_number=order_number,
+        transaction_id="txn_replayed",
+        amount=18.0,
+        currency="CNY",
+        channel="wechat_jsapi",
+        status="SUCCESS",
+        paid_at=datetime.now(tz=UTC),
+    )
+    raw_body = payload.model_dump_json().encode("utf-8")
+
+    async with session_factory() as session:
+        service = PaymentService(session, get_settings())
+        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+        info_calls.clear()
+        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+
+    assert any(
+        event == "payment.notification_replayed"
+        and call_kwargs.get("order_number") == order_number
+        and call_kwargs.get("txn_id") == "txn_replayed"
+        for event, call_kwargs in info_calls
+    )
 
 
 @pytest.mark.asyncio

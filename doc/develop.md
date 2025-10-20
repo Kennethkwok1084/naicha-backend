@@ -28,6 +28,24 @@
 
 **验收**：本地与 Compose 均可启动；日志含 `trace_id`；CI（lint/test/format）可跑通。
 
+### ⚠️ 高优先级待办（M4 前必须收口）
+
+**风险概述**
+
+- `app/services/orders.py:_generate_order_number()` 目前采用“秒级时间戳 + 4 位随机数”，同秒并发表导致冲突概率 1/10000，需要改为毫秒级 + 更长随机段或引入序列，确保订单号唯一。
+- `app/services/payments.py:handle_wechat_notification()` 缺少重放场景日志，无法快速识别重复回调。
+- `app/workers/print_jobs.py:execute_print_job()` 未对 `try_count` 与 `PRINT_RETRY_MAX` 配置做上限对比，失败任务可能无限重试。
+- `app/api/routes/ws/__init__.py` / `app/ws/manager.py` 暂无服务端心跳定时发送逻辑，不满足“WS ≤2s 延迟”的 M0 SLO。
+- `.env.example` 暴露 `kwok:Onjuju1084` 真实数据库凭据，上线前必须清理、轮换并审计 Git 历史。
+
+**执行计划 / TODO**
+
+1. [x] 订单号生成：升级为“毫秒时间戳 + 6 位十六进制随机”并补充并发冲突测试。
+2. [x] 支付回调：重复通知命中时输出 `logger.info("payment.notification_replayed", ...)`，同步更新相关监控/告警。
+3. [x] 打印任务：在 `try_count` 自增后对比 `settings.print_retry_max`，超过阈值直接置为永久失败并记入告警。
+4. [x] WebSocket：新增 30s 定时 `ping` 任务 + 客户端 `pong` 超时断线处理，记录心跳指标。
+5. [x] `.env.example`：切换为占位符账号、执行数据库密码轮换、使用 `git filter-repo`（或等价方案）审计历史，确保无敏感信息泄漏（已改为占位符，密码轮换/历史审计需上线前由运维确认完成）。
+
 ---
 
 ### M1（Day 3–5）数据库迁移 & 模型（含 V3.0 所有表）
