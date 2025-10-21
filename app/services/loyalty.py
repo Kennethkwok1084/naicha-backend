@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal, ROUND_DOWN
 from typing import Final
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounts import Coupon, LoyaltyTransaction, User
-from app.models.orders import Order, OrderItem
+from app.models.orders import Order
+from app.core.settings import Settings, get_settings
+from app.metrics.loyalty import COUPON_ISSUED_TOTAL, LOYALTY_POINTS_AWARDED_TOTAL
 
 ORDER_PAID_REASON: Final = "order_paid"
 COUPON_GRANT_REASON: Final = "coupon_grant"
 COUPON_TYPE: Final = "free_any_drink"
+COUPON_METRIC_REASON: Final = "loyalty10"
 
 
 class LoyaltyService:
@@ -19,8 +23,9 @@ class LoyaltyService:
 
     COUPON_THRESHOLD: Final[int] = 10
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, settings: Settings | None = None):
         self._session = session
+        self._settings = settings or get_settings()
 
     async def award_on_payment(self, order: Order) -> None:
         """支付成功后累积积分并在满足条件时自动发券。"""
@@ -45,7 +50,7 @@ class LoyaltyService:
         if user is None:
             return
 
-        points = await self._calculate_points(order.order_id)
+        points = self._calculate_points(order)
         if points <= 0:
             return
 
@@ -58,18 +63,27 @@ class LoyaltyService:
             )
         )
         user.loyalty_points += points
+        LOYALTY_POINTS_AWARDED_TOTAL.labels(reason=ORDER_PAID_REASON).inc(points)
 
         coupons_to_issue = user.loyalty_points // self.COUPON_THRESHOLD
         for _ in range(coupons_to_issue):
             await self._issue_coupon(user)
 
-    async def _calculate_points(self, order_id: int) -> int:
-        stmt: Select[tuple[int | None]] = select(
-            func.coalesce(func.sum(OrderItem.quantity), 0)
-        ).where(OrderItem.order_id == order_id)
+    def _calculate_points(self, order: Order) -> int:
+        ratio = Decimal(str(self._settings.loyalty_points_ratio))
+        if ratio <= 0:
+            return 0
 
-        quantity = await self._session.scalar(stmt)
-        return int(quantity or 0)
+        amount = Decimal(str(order.total_price or 0))
+        if amount <= 0:
+            return 0
+
+        minimum = Decimal(str(self._settings.loyalty_points_min_order))
+        if minimum and amount < minimum:
+            return 0
+
+        raw_points = (amount * ratio).quantize(Decimal("1"), rounding=ROUND_DOWN)
+        return int(raw_points)
 
     async def _issue_coupon(self, user: User) -> None:
         user.loyalty_points -= self.COUPON_THRESHOLD
@@ -90,3 +104,4 @@ class LoyaltyService:
                 issued_at=datetime.now(tz=UTC),
             )
         )
+        COUPON_ISSUED_TOTAL.labels(reason=COUPON_METRIC_REASON).inc()

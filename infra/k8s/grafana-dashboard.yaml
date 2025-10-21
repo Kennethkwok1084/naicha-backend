@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-m4
+  labels:
+    grafana_dashboard: "1"
+data:
+  m4-dashboard.json: |
+    {
+      "id": null,
+      "uid": "m4-pos-dashboard",
+      "title": "Naicha M4 Operations",
+      "timezone": "browser",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "tags": ["m4", "pos", "operations"],
+      "panels": [
+        {
+          "type": "row",
+          "title": "业务总览",
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+        },
+        {
+          "type": "stat",
+          "title": "POS 成功率 (5m)",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "sum(rate(admin_order_created_total{result=\"success\"}[5m])) / clamp_min(sum(rate(admin_order_created_total[5m])), 1)",
+              "legendFormat": "success_rate"
+            }
+          ],
+          "gridPos": {"h": 6, "w": 6, "x": 0, "y": 1},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": 0},
+                  {"color": "orange", "value": 0.9},
+                  {"color": "green", "value": 0.98}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "静态码匹配成功率 (5m)",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "sum(rate(payment_match_attempt_total{result=\"matched\"}[5m])) / clamp_min(sum(rate(payment_match_attempt_total[5m])), 1)",
+              "legendFormat": "match_success"
+            }
+          ],
+          "gridPos": {"h": 6, "w": 6, "x": 6, "y": 1},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": 0},
+                  {"color": "orange", "value": 0.9},
+                  {"color": "green", "value": 0.98}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "积分发放 (15m)",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "sum(rate(loyalty_points_awarded_total[15m]))",
+              "legendFormat": "points_awarded"
+            }
+          ],
+          "gridPos": {"h": 6, "w": 6, "x": 12, "y": 1}
+        },
+        {
+          "type": "stat",
+          "title": "看板查询 P95 (5m)",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(admin_dashboard_query_latency_ms_bucket[5m])) by (le))",
+              "legendFormat": "p95_latency"
+            }
+          ],
+          "gridPos": {"h": 6, "w": 6, "x": 18, "y": 1},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "orange", "value": 120},
+                  {"color": "red", "value": 200}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "性能与错误",
+          "collapsed": false,
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7}
+        },
+        {
+          "type": "timeseries",
+          "title": "POS 建单延迟直方图",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "rate(admin_order_create_latency_ms_bucket[5m])",
+              "legendFormat": "{{le}}"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "fieldConfig": {"defaults": {"unit": "ms"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "静态码匹配结果比率",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "rate(payment_match_attempt_total[5m])",
+              "legendFormat": "{{result}}"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+        },
+        {
+          "type": "timeseries",
+          "title": "打印任务失败率",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "sum(increase(print_job_enqueue_failed_total[5m]))",
+              "legendFormat": "enqueue_failed"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+        },
+        {
+          "type": "timeseries",
+          "title": "看板查询延迟 P99",
+          "datasource": {"type": "prometheus", "uid": "PROM_DS"},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(admin_dashboard_query_latency_ms_bucket[5m])) by (le))",
+              "legendFormat": "p99"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "fieldConfig": {"defaults": {"unit": "ms"}}
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "range",
+            "type": "constant",
+            "label": "Range",
+            "query": "day",
+            "current": {"text": "day", "value": "day"}
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {"refresh_intervals": ["10s", "30s", "1m", "5m", "15m"]}
+    }

@@ -6,7 +6,7 @@ import secrets
 import time
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +57,7 @@ class OrderService:
         payload: OrderCreateRequestSchema,
         idempotency_key: str,
         user: User | None,
+        post_create: Callable[[Order, list[OrderItem]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         if not idempotency_key.strip():
             raise OrderValidationError("Idempotency-Key header is required.")
@@ -80,6 +81,7 @@ class OrderService:
                 payload_hash=payload_hash,
                 user=user,
                 guest_session_id=actor_guest_session,
+                post_create=post_create,
             )
 
         async with self._session.begin():
@@ -89,6 +91,7 @@ class OrderService:
                 payload_hash=payload_hash,
                 user=user,
                 guest_session_id=actor_guest_session,
+                post_create=post_create,
             )
 
     async def _create_order_internal(
@@ -99,6 +102,7 @@ class OrderService:
         payload_hash: str,
         user: User | None,
         guest_session_id: str | None,
+        post_create: Callable[[Order, list[OrderItem]], Awaitable[None]] | None,
     ) -> dict[str, Any]:
         
         idempotency_record, cached_response = await self._ensure_idempotency(
@@ -152,6 +156,10 @@ class OrderService:
 
         order.total_price = total_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         await self._session.flush()
+
+        if post_create is not None:
+            await post_create(order, order_items)
+
         await self._session.refresh(order)
 
         response_payload = self._build_order_response(order, order_items)
@@ -310,6 +318,10 @@ class OrderService:
             status="pending_payment",
             order_type=payload.order_type,
             address_json=address_json,
+            payment_status="pending",
+            source="user",
+            payment_channel=None,
+            created_by_admin_id=None,
         )
         return order
 

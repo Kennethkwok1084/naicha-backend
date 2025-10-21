@@ -24,9 +24,17 @@ def _build_error_payload(
 
 
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
+    detail = exc.detail
+    message: str
+    extra: dict[str, Any] | None = None
+    if isinstance(detail, dict):
+        message = str(detail.get("message") or "")
+        extra = {key: value for key, value in detail.items() if key != "message"}
+    else:
+        message = str(detail)
     return JSONResponse(
         status_code=exc.status_code,
-        content=_build_error_payload(exc.detail, exc.status_code),
+        content=_build_error_payload(message, exc.status_code, extra=extra),
         headers=exc.headers,
     )
 

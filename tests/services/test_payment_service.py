@@ -226,10 +226,11 @@ async def test_payment_service_awards_loyalty_points(db_session, monkeypatch, en
         assert award_tx is not None
         assert len(enqueue_spy) == 1
 
-        coupon = await session.scalar(
-            select(Coupon).where(Coupon.user_id == 300)
+        coupons = list(
+            (await session.execute(select(Coupon).where(Coupon.user_id == 300))).scalars()
         )
-        assert coupon is None
+        assert len(coupons) == 1
+        assert coupons[0].type == "free_any_drink"
 
 
 @pytest.mark.asyncio
@@ -276,8 +277,8 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         coupons = list(
             (await session.execute(select(Coupon).where(Coupon.user_id == 400))).scalars()
         )
-        assert len(coupons) == 1
-        assert coupons[0].type == "free_any_drink"
+        assert len(coupons) == 2
+        assert all(coupon.type == "free_any_drink" for coupon in coupons)
 
         order_paid_tx = list(
             (await session.execute(
@@ -298,7 +299,7 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
                 )
             )).scalars()
         )
-        assert len(coupon_tx) == 1
+        assert len(coupon_tx) == 2
         assert enqueue_spy  # 多次通知可触发多次入队,至少保证有入队行为
 
 

@@ -40,11 +40,15 @@
 
 **执行计划 / TODO**
 
-1. [x] 订单号生成：升级为“毫秒时间戳 + 6 位十六进制随机”并补充并发冲突测试。
-2. [x] 支付回调：重复通知命中时输出 `logger.info("payment.notification_replayed", ...)`，同步更新相关监控/告警。
-3. [x] 打印任务：在 `try_count` 自增后对比 `settings.print_retry_max`，超过阈值直接置为永久失败并记入告警。
-4. [x] WebSocket：新增 30s 定时 `ping` 任务 + 客户端 `pong` 超时断线处理，记录心跳指标。
-5. [x] `.env.example`：切换为占位符账号、执行数据库密码轮换、使用 `git filter-repo`（或等价方案）审计历史，确保无敏感信息泄漏（已改为占位符，密码轮换/历史审计需上线前由运维确认完成）。
+1. [✅ 已完成] 订单号生成：升级为"毫秒时间戳 + 6 位十六进制随机"并补充并发冲突测试。
+   - 实现：`app/services/orders.py:_generate_order_number()` - 格式 `YYYYMMDDHHMMSSmmmm-NAXXXXXX`（14位时间+3位毫秒+6位十六进制）
+2. [✅ 已完成] 支付回调：重复通知命中时输出 `logger.info("payment.notification_replayed", ...)`，同步更新相关监控/告警。
+   - 实现：`app/services/payments.py:95-99` - 已添加重放日志
+3. [✅ 已完成] 打印任务：在 `try_count` 自增前对比 `settings.print_retry_max`，超过阈值直接置为永久失败并记入告警。
+   - 实现：`app/workers/print_jobs.py:41-51` - 先检查上限，再自增计数
+4. [✅ 已完成] WebSocket：新增 30s 定时 `ping` 任务 + 客户端 `pong` 超时断线处理（30s + 5s 宽限），记录心跳指标。
+   - 实现：`app/api/routes/ws/__init__.py:58-84` - 完整心跳机制
+5. [⏳ 上线前] `.env.example`：切换为占位符账号、执行数据库密码轮换、使用 `git filter-repo`（或等价方案）审计历史，确保无敏感信息泄漏（已改为占位符，密码轮换/历史审计需上线前由运维确认完成）。
 
 ---
 

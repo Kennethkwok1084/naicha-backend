@@ -14,6 +14,8 @@ from .menu import (
     MenuSpecOptionSchema,
 )
 from .order import (
+    AdminOrderCreateRequestSchema,
+    AdminOrderResponseSchema,
     OrderCreateRequestSchema,
     OrderDeliveryAddressSchema,
     OrderItemCreateSchema,
@@ -23,7 +25,20 @@ from .order import (
     OrderPaymentNativeRequestSchema,
     OrderResponseSchema,
 )
-from .payment import PaymentNotifyResponseSchema, WechatPaymentNotifySchema
+from .payment import (
+    AdminPaymentMatchCandidateSchema,
+    AdminPaymentMatchRequestSchema,
+    AdminPaymentMatchResponseSchema,
+    PaymentNotifyResponseSchema,
+    WechatPaymentNotifySchema,
+)
+from .dashboard import (
+    DashboardResponseSchema,
+    DashboardSummarySchema,
+    DashboardTopProductSchema,
+    DashboardTrendPointSchema,
+    DashboardPaymentChannelSchema,
+)
 from .shop import (
     DeliveryCheckRequestSchema,
     DeliveryCheckResponseSchema,
@@ -44,6 +59,16 @@ __all__ = [
     "MenuResponseSchema",
     "MenuSpecGroupSchema",
     "MenuSpecOptionSchema",
+    "AdminOrderCreateRequestSchema",
+    "AdminOrderResponseSchema",
+    "AdminPaymentMatchCandidateSchema",
+    "AdminPaymentMatchRequestSchema",
+    "AdminPaymentMatchResponseSchema",
+    "DashboardResponseSchema",
+    "DashboardSummarySchema",
+    "DashboardTopProductSchema",
+    "DashboardTrendPointSchema",
+    "DashboardPaymentChannelSchema",
     "OrderCreateRequestSchema",
     "OrderDeliveryAddressSchema",
     "OrderItemCreateSchema",

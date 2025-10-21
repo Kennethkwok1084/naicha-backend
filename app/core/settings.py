@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     ws_broadcast_url: str | None = Field(default=None, alias="WS_BROADCAST_URL")
     ws_broadcast_channel: str = Field(default="ws:merchant:broadcast", alias="WS_BROADCAST_CHANNEL")
 
+    loyalty_points_ratio: float = Field(default=1.0, alias="LOYALTY_POINTS_RATIO")
+    loyalty_points_min_order: float = Field(default=0.0, alias="LOYALTY_POINTS_MIN_ORDER")
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     allowed_origins_raw: str = Field(
         default="http://localhost:3000,http://localhost:5173", alias="ALLOWED_ORIGINS"

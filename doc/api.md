@@ -572,3 +572,130 @@
   - [ ] 多实例广播 / 性能阈值
 - **变更历史**：
   - 2025-10-17：首次发布
+
+### POS 快速建单
+- **状态**：新增 （日期：2025-10-21）
+- **路径/方法**：`POST /api/v1/admin/orders`
+- **权限**：管理员 JWT（角色：admin/manager/clerk；clerk 仅可使用 cash/pos_card）
+- **幂等要求**：是（`X-Idempotency-Key` 必填，每管理员 10 req/min）
+- **请求体**：
+```json
+{
+  "items": [{"product_id": 101, "spec_option_ids": [201], "quantity": 2}],
+  "payment_channel": "cash",
+  "notes": "少冰",
+  "print_job": true,
+  "buyer_open_id": "wx-openid-123"
+}
+```
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "order_number": "20251021163001-NA1234",
+  "status": "paid",
+  "payment_status": "paid",
+  "payment_channel": "cash",
+  "total_price": 36.0,
+  "created_at": "2025-10-21T08:30:01Z",
+  "print_job_id": 456
+}
+```
+- **错误码**：
+  - 400 Invalid JSON body / X-Idempotency-Key header missing
+  - 403 Insufficient role for POS order creation / Clerk role can only use in-store payment channels
+  - 409 order.out_of_stock / product.inactive / order.concurrent_conflict
+  - 422 buyer_open_id or guest_session_id is required
+  - 503 print.service_unavailable（打印服务不可用，仅记录日志）
+- **副作用**：写库 `orders`、`order_items`，写 `audit_logs`（action=`pos.order.create`），触发 WebSocket `order.created`，打印任务入队，刷新看板缓存
+- **审计记录**：记录 admin_id、IP、User-Agent、订单要素
+- **观测指标**：
+  - `admin_order_created_total{channel=...,result=success|error}`
+  - `admin_order_create_latency_ms{channel=...}`
+- **测试清单**：
+  - [x] 正常流（cash/wechat）
+  - [x] 幂等复用
+  - [x] 角色与渠道限制
+  - [x] 打印任务与广播
+  - [x] 看板缓存刷新
+- **变更历史**：
+  - 2025-10-21：首次发布（M4）
+
+### 静态码支付匹配
+- **状态**：新增 （日期：2025-10-21）
+- **路径/方法**：`POST /api/v1/admin/payments/match`
+- **权限**：管理员 JWT
+- **幂等要求**：否（匹配流程内部保证状态）
+- **请求体**：
+```json
+{
+  "qr_session_id": "qr-20251021-001",
+  "amount": 28.0,
+  "paid_at": "2025-10-21T08:05:00Z",
+  "transaction_id": "txn-static-001",
+  "trace_id": "trace-abc",
+  "force_order_id": null
+}
+```
+- **响应体（唯一匹配）**：
+```json
+{
+  "status": "matched",
+  "payment_record_id": 9001,
+  "order_id": 321,
+  "order_number": "202510211605-NA0001",
+  "payment_channel": "static_qr",
+  "payment_status": "paid"
+}
+```
+- **错误码**：
+  - 404 payment.match_not_found —— 未找到候选
+  - 409 payment.match_ambiguous —— 多个候选（响应包含 candidates）
+  - 409 payment.match_conflict —— 金额不符 / 订单已支付
+  - 422 paid_at / amount / force_order_id 校验失败
+- **副作用**：写 `payment_records` 匹配状态，更新 `orders` 支付状态，创建打印任务、刷新看板缓存，写 `audit_logs`（action=`admin.payment.match`），触发 WebSocket `order.paid`，积分与发券幂等发放
+- **审计记录**：记录 admin_id、匹配到的 payment_record_id / order_id、trace_id、IP、UA
+- **观测指标**：
+  - `payment_match_attempt_total{result=matched|ambiguous|not_found|conflict}`
+  - `loyalty_points_awarded_total{reason='order_paid'}`
+  - `coupon_issued_total{reason='loyalty10'}`
+- **测试清单**：
+  - [x] 唯一匹配
+  - [x] 冲突（金额不符 / 已支付）
+  - [x] 多候选（返回 candidates）
+  - [x] 人工 force 匹配
+  - [x] 幂等积分/发券
+- **变更历史**：
+  - 2025-10-21：首次发布（M4）
+
+### 商家数据看板
+- **状态**：新增 （日期：2025-10-21）
+- **路径/方法**：`GET /api/v1/admin/dashboard`
+- **权限**：管理员 JWT
+- **幂等要求**：是（读接口；缓存 60s；限流 30 req/min/admin）
+- **查询参数**：
+  - `range=day|week|month`（默认 day）
+  - `compare=true|false`（默认 false）
+- **响应体**：
+```json
+{
+  "range": "day",
+  "summary": {"gross_sales": 1250.0, "order_count": 85, "avg_ticket": 14.7, "refund_amount": 60.0},
+  "trend": [{"ts": "2025-10-21T02:00:00Z", "gross_sales": 210.0, "order_count": 14}],
+  "top_products": [{"product_id": 101, "name": "红茶拿铁", "quantity": 35, "gross_sales": 525.0}],
+  "payment_channel_split": [{"channel": "wechat_jsapi", "order_count": 45, "gross_sales": 630.0}],
+  "compare_summary": {"gross_sales": 980.0, "order_count": 70, "avg_ticket": 14.0, "refund_amount": 40.0}
+}
+```
+- **错误码**：
+  - 422 Unsupported dashboard range
+- **副作用**：无写操作；POS / 静态码匹配成功时刷新缓存
+- **审计记录**：否
+- **观测指标**：
+  - `admin_dashboard_query_latency_ms{range=...}`
+- **测试清单**：
+  - [x] 日维度统计 + 对比
+  - [x] 趋势 / Top5 / 渠道拆分计算
+  - [x] 非法参数校验
+- **变更历史**：
+  - 2025-10-21：首次发布（M4）

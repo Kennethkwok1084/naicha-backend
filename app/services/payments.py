@@ -98,6 +98,9 @@ class PaymentService:
                 order.status = "paid"
                 order.updated_at = datetime.now(tz=UTC)
                 status_changed = True
+            order.payment_status = "paid"
+            if not order.payment_channel:
+                order.payment_channel = payload.channel
 
             print_job = await self._ensure_print_job(order)
             if status_changed:
@@ -109,7 +112,7 @@ class PaymentService:
                 job_to_enqueue = print_job.job_id
 
             await self._session.flush()
-            await LoyaltyService(self._session).award_on_payment(order)
+            await LoyaltyService(self._session, self._settings).award_on_payment(order)
 
         if status_changed and broadcast_payload is not None:
             try:

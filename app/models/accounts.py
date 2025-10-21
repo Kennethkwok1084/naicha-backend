@@ -29,7 +29,7 @@ class Admin(Base, CreatedAtMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
 
-    __table_args__ = (CheckConstraint("role IN ('admin','clerk')", name="ck_admins_role"),)
+    __table_args__ = (CheckConstraint("role IN ('admin','manager','clerk')", name="ck_admins_role"),)
 
 
 class User(Base, CreatedAtMixin):

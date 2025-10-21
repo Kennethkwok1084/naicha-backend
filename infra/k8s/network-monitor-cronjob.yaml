@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: home-cloud-network-monitor
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: network-monitor
+              image: alpine:3.20
+              command:
+                - "/bin/sh"
+                - "-c"
+                - |
+                  set -eu
+                  TARGET_HOST=${TARGET_HOST:-"pos-api.naicha-cloud.local"}
+                  SAMPLE_COUNT=${SAMPLE_COUNT:-5}
+                  TIMEOUT=1
+
+                  LOSS=$(ping -c ${SAMPLE_COUNT} -W ${TIMEOUT} "$TARGET_HOST" | awk -F'[, ]+' '/packet loss/{print $(NF-1)}' | tr -d '%')
+                  RTT_LINE=$(ping -c ${SAMPLE_COUNT} -W ${TIMEOUT} "$TARGET_HOST" | awk -F' = ' '/rtt min/ {print $2}')
+
+                  if [ -z "$RTT_LINE" ]; then
+                    RTT_MIN=0
+                    RTT_AVG=0
+                    RTT_MAX=0
+                  else
+                    IFS='/' read RTT_MIN RTT_AVG RTT_MAX RTT_STD <<<"$RTT_LINE"
+                  fi
+
+                  cat <<EOF
+home_cloud_ping_rtt_seconds{quantile="min"} ${RTT_MIN:-0}
+home_cloud_ping_rtt_seconds{quantile="avg"} ${RTT_AVG:-0}
+home_cloud_ping_rtt_seconds{quantile="max"} ${RTT_MAX:-0}
+home_cloud_ping_packet_loss_ratio ${LOSS:-100}
+EOF

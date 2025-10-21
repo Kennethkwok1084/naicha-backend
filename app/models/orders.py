@@ -32,6 +32,16 @@ class Order(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     order_type: Mapped[str] = mapped_column(String(20), nullable=False)
     address_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    payment_channel: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    payment_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'pending'")
+    )
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'user'")
+    )
+    created_by_admin_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admins.admin_id"), nullable=True
+    )
     is_scheduled: Mapped[bool] = mapped_column(
         Boolean, server_default=text("FALSE"), nullable=False
     )
@@ -53,6 +63,14 @@ class Order(Base, TimestampMixin):
             "order_type IN ('pickup','delivery')",
             name="ck_orders_order_type",
         ),
+        CheckConstraint(
+            "payment_status IN ('pending','paid')",
+            name="ck_orders_payment_status",
+        ),
+        CheckConstraint(
+            "source IN ('user','pos','system')",
+            name="ck_orders_source",
+        ),
     )
 
 
@@ -64,6 +82,7 @@ Index(
     Order.scheduled_at,
     postgresql_where=Order.is_scheduled.is_(True),
 )
+Index("ix_orders_source_created", Order.source, Order.created_at.desc())
 
 
 class OrderItem(Base):
@@ -93,6 +112,7 @@ class PaymentRecord(Base, CreatedAtMixin):
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     txn_id: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
     out_trade_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    qr_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     matched_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("orders.order_id", ondelete="SET NULL"),
         nullable=True,
@@ -100,6 +120,10 @@ class PaymentRecord(Base, CreatedAtMixin):
     match_status: Mapped[str] = mapped_column(
         String(20), server_default="unmatched", nullable=False
     )
+    matched_by_admin_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admins.admin_id"), nullable=True
+    )
+    match_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     raw_notification_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
@@ -119,6 +143,16 @@ class PaymentRecord(Base, CreatedAtMixin):
         Index("ix_payment_records_time_amount", "paid_at", "amount"),
         Index("ix_payment_records_type_channel", "record_type", "channel"),
         Index("ix_payment_records_order_match", "matched_order_id"),
+        Index(
+            "ix_payment_records_match_status_paid",
+            "match_status",
+            "paid_at",
+        ),
+        Index(
+            "ix_payment_records_qr_session_status",
+            "qr_session_id",
+            "match_status",
+        ),
     )
 
 

@@ -27,3 +27,37 @@ class WechatPaymentNotifySchema(BaseModel):
 
 class PaymentNotifyResponseSchema(BaseModel):
     status: str
+
+
+class AdminPaymentMatchRequestSchema(BaseModel):
+    qr_session_id: str = Field(..., min_length=1, max_length=64)
+    amount: float = Field(..., gt=0)
+    paid_at: datetime
+    trace_id: str | None = Field(default=None, max_length=80)
+    transaction_id: str | None = Field(default=None, max_length=80)
+    force_order_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("qr_session_id", "trace_id", "transaction_id", mode="before")
+    @classmethod
+    def _strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+
+class AdminPaymentMatchCandidateSchema(BaseModel):
+    order_id: int
+    order_number: str
+    total_price: float
+    time_diff_seconds: int
+    match_score: float | None = None
+
+
+class AdminPaymentMatchResponseSchema(BaseModel):
+    status: Literal["matched"]
+    payment_record_id: int
+    order_id: int
+    order_number: str
+    payment_channel: str
+    payment_status: str

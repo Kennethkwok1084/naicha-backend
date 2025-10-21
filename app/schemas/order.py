@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -84,3 +84,34 @@ class OrderPaymentInitiateResponseSchema(BaseModel):
     order_id: int
     channel: str
     payload: dict[str, Any]
+
+
+class AdminOrderCreateRequestSchema(BaseModel):
+    items: list[OrderItemCreateSchema] = Field(..., min_length=1, max_length=50)
+    payment_channel: Literal[
+        "wechat_jsapi", "wechat_native", "static_qr", "cash", "pos_card"
+    ]
+    order_type: Literal["pickup"] = Field(default="pickup")
+    notes: str | None = Field(default=None, max_length=500)
+    print_job: bool = Field(default=True)
+    buyer_open_id: str | None = Field(default=None, max_length=255)
+    guest_session_id: str | None = Field(default=None, max_length=80)
+
+    @field_validator("buyer_open_id", "guest_session_id", mode="before")
+    @classmethod
+    def _clean_optional_str(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+
+class AdminOrderResponseSchema(BaseModel):
+    order_id: int
+    order_number: str
+    status: str
+    payment_status: str
+    payment_channel: str
+    total_price: float
+    created_at: datetime
+    print_job_id: int | None = None
