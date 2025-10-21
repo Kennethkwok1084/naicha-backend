@@ -14,12 +14,12 @@ PAYMENT_CALLBACK_TOTAL = Counter(
 )
 PAYMENT_CALLBACK_LATENCY_MS = Histogram(
     "payment_callback_latency_ms",
-    "微信支付通知处理耗时（毫秒）。",
+    "微信支付通知处理耗时(毫秒)。",
     buckets=(5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120),
 )
 
 __all__ = [
-    "PAYMENT_MATCH_ATTEMPT_TOTAL",
-    "PAYMENT_CALLBACK_TOTAL",
     "PAYMENT_CALLBACK_LATENCY_MS",
+    "PAYMENT_CALLBACK_TOTAL",
+    "PAYMENT_MATCH_ATTEMPT_TOTAL",
 ]

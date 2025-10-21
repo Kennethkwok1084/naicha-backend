@@ -13,10 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
+from app.metrics.orders import ORDER_CREATE_TOTAL
 from app.models.accounts import User
 from app.models.catalog import Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import IdempotencyKey, Order, OrderItem
-from app.metrics.orders import ORDER_CREATE_TOTAL
 from app.schemas.order import (
     OrderCreateRequestSchema,
     OrderPaymentJsapiRequestSchema,

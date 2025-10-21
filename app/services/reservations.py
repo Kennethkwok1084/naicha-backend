@@ -206,7 +206,7 @@ class ReservationService:
         if ranges:
             return ranges
 
-        # 无匹配 weekday 时，兜底使用第一条配置
+        # 无匹配 weekday 时, 兜底使用第一条配置
         for entry in entries:
             for time_range in entry.get("ranges") or []:
                 if not isinstance(time_range, (list, tuple)) or len(time_range) != 2:

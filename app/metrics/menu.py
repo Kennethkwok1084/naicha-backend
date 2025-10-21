@@ -11,7 +11,7 @@ MENU_CACHE_LOOKUP_TOTAL = Counter(
 )
 MENU_CACHE_HIT_RATE = Gauge(
     "menu_cache_hit_rate",
-    "菜单缓存命中率（0-1）。",
+    "菜单缓存命中率(0-1)。",
 )
 
 _lock = Lock()
@@ -38,8 +38,8 @@ def record_cache_miss() -> None:
 
 
 __all__ = [
-    "MENU_CACHE_LOOKUP_TOTAL",
     "MENU_CACHE_HIT_RATE",
+    "MENU_CACHE_LOOKUP_TOTAL",
     "record_cache_hit",
     "record_cache_miss",
 ]

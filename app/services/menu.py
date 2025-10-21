@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.settings import Settings
+from app.metrics.menu import record_cache_hit, record_cache_miss
 from app.models.catalog import (
     Category,
     Product,
@@ -17,7 +18,6 @@ from app.models.catalog import (
     SpecGroup,
     SpecOption,
 )
-from app.metrics.menu import record_cache_hit, record_cache_miss
 
 _MENU_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
