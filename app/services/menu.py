@@ -17,6 +17,7 @@ from app.models.catalog import (
     SpecGroup,
     SpecOption,
 )
+from app.metrics.menu import record_cache_hit, record_cache_miss
 
 _MENU_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -168,11 +169,14 @@ class MenuService:
     def _load_from_cache(self) -> dict[str, Any] | None:
         entry = _MENU_CACHE.get(self.CACHE_KEY)
         if not entry:
+            record_cache_miss()
             return None
         expires_at, payload = entry
         if expires_at < time.time():
             _MENU_CACHE.pop(self.CACHE_KEY, None)
+            record_cache_miss()
             return None
+        record_cache_hit()
         return payload
 
     def _store_to_cache(self, payload: dict[str, Any]) -> None:

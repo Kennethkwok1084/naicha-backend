@@ -4,12 +4,12 @@ import hmac
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import app.services.payments
 import pytest
 from app.core.settings import get_settings
 from app.models.accounts import Coupon, LoyaltyTransaction, User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
 from app.schemas import WechatPaymentNotifySchema
-import app.services.payments
 from app.services.payments import (
     PaymentConflictError,
     PaymentService,

@@ -25,6 +25,7 @@ class OrderCreateRequestSchema(BaseModel):
     order_type: str = Field(..., pattern="^(pickup|delivery)$")
     notes: str | None = Field(default=None, max_length=500)
     guest_session_id: str | None = Field(default=None, max_length=80)
+    scheduled_at: datetime | None = Field(default=None)
     address: OrderDeliveryAddressSchema | None = None
 
     @field_validator("guest_session_id")
@@ -34,6 +35,15 @@ class OrderCreateRequestSchema(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def _ensure_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+            raise ValueError("scheduled_at 必须包含时区信息。")
+        return value
 
 
 class OrderItemSchema(BaseModel):
@@ -52,6 +62,9 @@ class OrderResponseSchema(BaseModel):
     order_type: str
     total_price: float
     created_at: datetime
+    is_scheduled: bool
+    scheduled_at: datetime | None
+    reminder_sent_at: datetime | None
     items: list[OrderItemSchema]
 
 

@@ -5,7 +5,19 @@ from .auth import (
     UserLoginResponseSchema,
     UserSummarySchema,
 )
+from .dashboard import (
+    DashboardPaymentChannelSchema,
+    DashboardResponseSchema,
+    DashboardSummarySchema,
+    DashboardTopProductSchema,
+    DashboardTrendPointSchema,
+)
 from .guest import GuestSessionCreateRequestSchema, GuestSessionResponseSchema
+from .inventory import (
+    InventoryProductResponseSchema,
+    InventorySpecOptionResponseSchema,
+    InventoryUpdateRequestSchema,
+)
 from .menu import (
     MenuCategorySchema,
     MenuProductSchema,
@@ -32,13 +44,6 @@ from .payment import (
     PaymentNotifyResponseSchema,
     WechatPaymentNotifySchema,
 )
-from .dashboard import (
-    DashboardResponseSchema,
-    DashboardSummarySchema,
-    DashboardTopProductSchema,
-    DashboardTrendPointSchema,
-    DashboardPaymentChannelSchema,
-)
 from .shop import (
     DeliveryCheckRequestSchema,
     DeliveryCheckResponseSchema,
@@ -47,28 +52,37 @@ from .shop import (
     ShopStatusSchema,
 )
 from .user import UserAddressSchema, UserProfileSchema
+from .want import (
+    WantDailyPointSchema,
+    WantRecordResponseSchema,
+    WantStatsResponseSchema,
+    WantTopProductSchema,
+)
 
 __all__ = [
     "AdminLoginRequestSchema",
-    "DeliveryCheckRequestSchema",
-    "DeliveryCheckResponseSchema",
-    "GuestSessionCreateRequestSchema",
-    "GuestSessionResponseSchema",
-    "MenuCategorySchema",
-    "MenuProductSchema",
-    "MenuResponseSchema",
-    "MenuSpecGroupSchema",
-    "MenuSpecOptionSchema",
     "AdminOrderCreateRequestSchema",
     "AdminOrderResponseSchema",
     "AdminPaymentMatchCandidateSchema",
     "AdminPaymentMatchRequestSchema",
     "AdminPaymentMatchResponseSchema",
+    "DashboardPaymentChannelSchema",
     "DashboardResponseSchema",
     "DashboardSummarySchema",
     "DashboardTopProductSchema",
     "DashboardTrendPointSchema",
-    "DashboardPaymentChannelSchema",
+    "DeliveryCheckRequestSchema",
+    "DeliveryCheckResponseSchema",
+    "GuestSessionCreateRequestSchema",
+    "GuestSessionResponseSchema",
+    "InventoryProductResponseSchema",
+    "InventorySpecOptionResponseSchema",
+    "InventoryUpdateRequestSchema",
+    "MenuCategorySchema",
+    "MenuProductSchema",
+    "MenuResponseSchema",
+    "MenuSpecGroupSchema",
+    "MenuSpecOptionSchema",
     "OrderCreateRequestSchema",
     "OrderDeliveryAddressSchema",
     "OrderItemCreateSchema",
@@ -87,5 +101,9 @@ __all__ = [
     "UserLoginResponseSchema",
     "UserProfileSchema",
     "UserSummarySchema",
+    "WantDailyPointSchema",
+    "WantRecordResponseSchema",
+    "WantStatsResponseSchema",
+    "WantTopProductSchema",
     "WechatPaymentNotifySchema",
 ]

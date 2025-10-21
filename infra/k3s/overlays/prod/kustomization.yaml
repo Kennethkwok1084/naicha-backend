@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: naicha-prod
+resources:
+  - ../../base
+commonLabels:
+  app.kubernetes.io/environment: production
+images:
+  - name: ghcr.io/your-org/naicha-backend
+    newTag: prod
+replicas:
+  - name: naicha-api
+    count: 3
+  - name: naicha-worker
+    count: 2
+patchesStrategicMerge:
+  - ingress-patch.yaml

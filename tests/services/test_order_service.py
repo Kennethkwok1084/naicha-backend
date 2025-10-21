@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from decimal import Decimal
 import re
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
+from app.models.shop import ShopProfile
 from app.schemas import (
     OrderCreateRequestSchema,
     OrderItemCreateSchema,
@@ -65,6 +68,7 @@ async def test_create_order_with_idempotency(db_session) -> None:
     first = await service.create_order(payload=payload, idempotency_key="idem-001", user=user)
     assert first["order_id"] > 0
     assert first["total_price"] == 26.0  # 12 + 1 = 13, quantity 2
+    assert first["is_scheduled"] is False
 
     second = await service.create_order(payload=payload, idempotency_key="idem-001", user=user)
     assert second == first
@@ -128,3 +132,64 @@ def test_generate_order_number_uniqueness() -> None:
     assert len(numbers) == 2000
     for order_number in numbers:
         assert pattern.match(order_number), f"unexpected format: {order_number}"
+
+
+@pytest.mark.asyncio
+async def test_create_reservation_requires_flag(db_session) -> None:
+    await _seed_menu(db_session)
+    user = User(user_id=2, open_id="reservation-user")
+    db_session.add(user)
+    await db_session.flush()
+
+    service = OrderService(db_session, get_settings())
+    payload = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        order_type="pickup",
+        scheduled_at=datetime.now(tz=UTC) + timedelta(hours=1),
+    )
+
+    with pytest.raises(OrderValidationError):
+        await service.create_order(payload=payload, idempotency_key="idem-resv", user=user)
+
+
+@pytest.mark.asyncio
+async def test_create_reservation_order_success(db_session) -> None:
+    await _seed_menu(db_session)
+
+    profile = ShopProfile(
+        id=1,
+        timezone="Asia/Shanghai",
+        open_hours_json=[{"weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(), "ranges": [["08:00", "22:00"]]}],
+    )
+    db_session.add(profile)
+    await db_session.flush()
+
+    user = User(user_id=42, open_id="user-reservation")
+    db_session.add(user)
+    await db_session.flush()
+
+    settings = get_settings()
+    original_flag = settings.reservation_enabled
+    try:
+        settings.reservation_enabled = True
+        service = OrderService(db_session, settings)
+        scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=2)
+        payload = OrderCreateRequestSchema(
+            items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+            order_type="pickup",
+            scheduled_at=scheduled_local,
+        )
+
+        result = await service.create_order(
+            payload=payload,
+            idempotency_key="idem-reservation-ok",
+            user=user,
+        )
+    finally:
+        settings.reservation_enabled = original_flag
+
+    assert result["is_scheduled"] is True
+    assert result["scheduled_at"] is not None
+    scheduled_utc = datetime.fromisoformat(result["scheduled_at"])
+    assert scheduled_utc.tzinfo is not None
+    assert scheduled_utc > datetime.now(tz=UTC)

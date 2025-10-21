@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     reservation_enabled: bool = Field(default=False, alias="RESERVATION_ENABLED")
     want_enabled: bool = Field(default=True, alias="WANT_ENABLED")
     soldout_style: Literal["hide", "disabled"] = Field(default="hide", alias="SOLDOUT_STYLE")
+    reconciliation_csv_enabled: bool = Field(
+        default=False, alias="RECONCILIATION_CSV_ENABLED"
+    )
+    reconciliation_report_dir: str | None = Field(
+        default=None, alias="RECONCILIATION_REPORT_DIR"
+    )
     reservation_reminder_minutes: int = Field(default=15, alias="RESERVATION_REMINDER_MINUTES")
     static_match_time_window_min: int = Field(default=5, alias="STATIC_MATCH_TIME_WINDOW_MIN")
     delivery_radius_m: int = Field(default=1500, alias="DELIVERY_RADIUS_M")

@@ -1,10 +1,15 @@
-# 运维 Runbook（M4 新增功能）
+# 运维 Runbook（M4-M5 新增功能）
 
 ## 目录
 1. [监控指标与告警阈值](#监控指标与告警阈值)
 2. [POS 快速建单故障排查](#pos-快速建单故障排查)
 3. [静态码支付匹配故障排查](#静态码支付匹配故障排查)
 4. [数据看板异常排查](#数据看板异常排查)
+5. [预约提醒任务排查](#预约提醒任务排查)
+6. [售罄/库存刷新排查](#售罄库存刷新排查)
+7. [「想要」统计排查](#想要统计排查)
+8. [每日对账任务排查](#每日对账任务排查)
+9. [自动降级演练流程](#自动降级演练流程)
 
 ---
 
@@ -19,6 +24,10 @@
 | `coupon_issued_total{reason="loyalty10"}` | 满 10 积分发券数量 | 30 分钟内连续为 0 + 日活≥100 ⇒ 告警 |
 | `admin_dashboard_query_latency_ms` | 看板查询延迟 | P95 > 120ms 告警 / P99 > 300ms 严重告警 |
 | `print_job.enqueue_failed`（结构化日志） | 打印入队失败 | 1 分钟内多次出现 ⇒ 需排查 Celery/Redis |
+| `reservation_reminder_total` / `reservation_activated_total` | 预约提醒/入列次数 | 5 分钟内为 0 且当日预约>0 ⇒ 告警；连续失败需排查任务日志 |
+| `celery_task_runtime_seconds{task="run_daily_reconciliation"}` | 对账任务执行时长 | 持续 >60s 告警；>120s 升级 |
+| `reconciliation_diff_count{type=*}` | 当日对账差异数量 | `type=unmatched_payments` 连续两日 >0 ⇒ 告警 |
+| `want_event_total`（规划） / `admin_want_stats_latency_ms` | 「想要」事件与统计延迟 | 暂无告警，M6 绑定面板 |
 
 > **提示**：告警打点后请同步在 Grafana 面板添加对应 Panel 与 Alert Rule，详见监控配置文件。
 
@@ -123,3 +132,138 @@
 ---
 
 > 本 Runbook 仅涵盖 M4 新增功能。后续若扩展 Grafana 面板、Prometheus 告警或网络探测 CronJob，请同步更新本文件的相关章节。
+
+---
+
+## 预约提醒任务排查
+
+1. **确认 Celery 任务状态**
+   - 日志关键字：`reservation.reminder_sent` / `reservation.activated_orders`
+   - 指标：`reservation_reminder_total`、`reservation_activated_total`
+2. **验证待执行数据**
+   ```sql
+   SELECT order_id, scheduled_at, reminder_sent_at, status, payment_status
+   FROM orders
+   WHERE is_scheduled = TRUE
+     AND scheduled_at BETWEEN now() - interval '1 day' AND now() + interval '1 day';
+   ```
+   - `payment_status != 'paid'` ⇒ 不会提醒/入列，需要先确认支付
+3. **检查任务堆积**
+   ```sql
+   SELECT *
+   FROM celery_taskmeta
+   WHERE task_name LIKE 'app.workers.tasks.reservation_%'
+   ORDER BY date_done DESC
+   LIMIT 20;
+   ```
+4. **常见问题**
+   - 调整营业时间：更新 `shop_profile.open_hours_json` 后立即生效
+   - 提醒未发送：确认 `reservation_reminder_minutes` 是否 >=5；过小会被验证拒绝
+5. **恢复步骤**
+   - 手动执行：`celery -A app.workers.celery_app call app.workers.tasks.reservation_send_reminders`
+   - 若个别订单延迟，可人工将 `reminder_sent_at` 置空并重跑任务
+
+---
+
+## 售罄库存刷新排查
+
+1. **确认审计日志**
+   ```sql
+   SELECT created_at, actor_admin_id, target_id, before_json, after_json
+   FROM audit_logs
+   WHERE action IN ('admin.inventory.product.update','admin.inventory.spec_option.update')
+   ORDER BY created_at DESC
+   LIMIT 20;
+   ```
+2. **检查菜单缓存**
+   - 日志：`menu.cache.hit` / `menu.cache.miss`
+   - 若多实例部署，缓存 TTL=240s，最长 5 分钟同步；Runbook 中注明此延迟为预期
+3. **手动刷新**
+   ```python
+   from app.services.menu import invalidate_menu_cache
+   invalidate_menu_cache()
+   ```
+4. **常见问题**
+   - 产品未绑定分类 ⇒ `/menu` 落到 `uncategorized_products`
+   - 规格库存变化未同步 ⇒ 确认 `spec_options.inventory_status` 触发事件监听
+
+---
+
+## 「想要」统计排查
+
+1. **限流命中**
+   - 日志：`want.rate_limited`（若新增）；HTTP 429
+   - 检查 SlowAPI 头 `X-RateLimit-Remaining`
+2. **查询事件明细**
+   ```sql
+   SELECT product_id, user_id, ip_hash, created_at
+   FROM want_events
+   WHERE created_at >= now() - interval '1 day'
+   ORDER BY created_at DESC
+   LIMIT 50;
+   ```
+3. **统计校验**
+   ```sql
+   SELECT date_trunc('day', created_at) AS day, COUNT(*)
+   FROM want_events
+   WHERE product_id = :pid AND created_at >= now() - interval '30 days'
+   GROUP BY 1
+   ORDER BY 1;
+   ```
+4. **Feature Flag**
+   - `WANT_ENABLED=false` 时接口返回 503；确认配置文件或环境变量
+5. **恢复建议**
+   - 批量修补：如需补写数据，可导入历史日志再调用 `WantService.record_want`（注意限流）
+
+---
+
+## 每日对账任务排查
+
+1. **查看执行日志**
+   - 日志关键字：`reconciliation.summary` / `reconciliation.csv_written`
+   - 指标：`reconciliation_run_total{result=*}`、`reconciliation_diff_count{type=*}`
+2. **核对差异**
+   ```sql
+   SELECT order_id, order_number, payment_status, status, total_price
+   FROM orders
+   WHERE order_id = ANY(:order_ids);
+   ```
+   ```sql
+   SELECT pay_id, record_type, amount, match_status, matched_order_id
+   FROM payment_records
+   WHERE pay_id = ANY(:pay_ids);
+   ```
+3. **CSV 导出**
+   - Flag：`RECONCILIATION_CSV_ENABLED=true`
+   - 目录：`RECONCILIATION_REPORT_DIR`（默认空，不导出）
+4. **常见场景**
+   - POS 未及时建单 → `orders_without_payment`
+   - 静态码二维码重复被扫 → `unmatched_payments`
+   - 退款手工处理 → `orders_without_refund`
+5. **恢复步骤**
+   - 人工比对后，补建订单或更新支付记录 `match_status`
+   - CSV 失败：确认磁盘权限、剩余空间；必要时关闭 Flag 仅记录日志
+
+---
+
+## 自动降级演练流程
+
+1. **准备**
+   - 确认家里节点与云端节点均为 Ready，Prometheus 目标正常
+   - 记录当前核心指标：HTTP 成功率、P95 延迟、队列深度
+2. **执行步骤**
+   1. 断开家庭节点的 WireGuard（或关闭本地 K3s 节点）
+   2. 观察 5 分钟：
+      - 家节点 `NotReady` ⇒ WAF/Ingress 应只剩云端节点
+      - 业务请求保持成功率 ≥99%，P95 波动 <20%
+   3. 恢复 WireGuard 连接，确认家节点重新 Ready，但仍为热备
+3. **验证**
+   - 查看 `kubectl get pods -o wide`，确认流量只指向云端节点
+   - 检查 Prometheus：云端 CPU/内存平稳、家节点 0 QPS
+4. **记录**
+   - 演练用时、发现的问题与改进项，归档至 `doc/degrade-log/`（待落地）
+5. **常见问题**
+   - WAF 缓存未刷新 ⇒ 手动刷新或降低 TTL
+   - 家节点恢复后自动分流 ⇒ 核对 Ingress 权重或 Service Selector
+
+> 演练计划按季度执行，必要时与对账任务一并复盘。

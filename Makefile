@@ -2,7 +2,7 @@ PYTHON ?= python
 POETRY ?= poetry
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker
+.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker perf-locust perf-ws
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -52,3 +52,23 @@ contract-test:
 	kill $$SERVER_PID; \
 	wait $$SERVER_PID 2>/dev/null || true; \
 	exit $$STATUS
+
+perf-locust:
+	@if [ -z "$$PERF_BASE_URL" ]; then echo "请设置 PERF_BASE_URL 环境变量"; exit 1; fi
+	locust -f infra/perf/locustfile.py --headless --users 100 --spawn-rate 20 --run-time 30s
+
+perf-ws:
+	@if [ -z "$$PERF_ADMIN_TOKEN" ]; then echo "请设置 PERF_ADMIN_TOKEN 环境变量"; exit 1; fi
+	$(PYTHON) infra/perf/ws_runner.py --connections 50 --duration 60
+
+perf-baseline:
+	@echo "=========================================="
+	@echo "执行 Week1 完整压测基线"
+	@echo "=========================================="
+	@if [ -z "$$PERF_BASE_URL" ]; then echo "❌ 请设置 PERF_BASE_URL 环境变量"; exit 1; fi
+	@bash infra/perf/run_baseline.sh
+	@echo ""
+	@echo "📊 开始解析结果并更新文档..."
+	@$(PYTHON) infra/perf/parse_results.py --input ./perf_results --baseline ./doc/perf-baseline.md
+	@echo ""
+	@echo "✅ 完成！查看报告: open perf_results/locust_*.html"

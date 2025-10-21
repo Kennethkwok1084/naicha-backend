@@ -4,7 +4,7 @@ import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,9 +52,9 @@ _cache = _DashboardCache()
 class DashboardService:
     """负责生成商家看板统计数据。"""
 
-    CACHE_TTL_SECONDS = 60
-    TOP_PRODUCT_LIMIT = 5
-    RANGE_TO_DAYS: dict[DashboardRange, int] = {"day": 1, "week": 7, "month": 30}
+    CACHE_TTL_SECONDS: ClassVar[int] = 60
+    TOP_PRODUCT_LIMIT: ClassVar[int] = 5
+    RANGE_TO_DAYS: ClassVar[dict[DashboardRange, int]] = {"day": 1, "week": 7, "month": 30}
 
     def __init__(self, session: AsyncSession, settings: Settings | None = None):
         self._session = session

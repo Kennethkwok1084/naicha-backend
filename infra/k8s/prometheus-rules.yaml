@@ -67,3 +67,37 @@ spec:
           annotations:
             summary: "家→云网络丢包率超过 5%"
             description: "请检查家庭路由、ISP 或云侧防火墙策略是否异常。"
+    - name: m5-business-alerts
+      rules:
+        - alert: NaichaReservationReminderSilent
+          expr: increase(reservation_reminder_total[15m]) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "预约提醒 15 分钟内未触发"
+            description: "可能存在 Celery 任务阻塞或预约订单状态异常，请检查任务日志。"
+        - alert: NaichaReservationActivationDelay
+          expr: increase(reservation_activated_total[15m]) == 0 and sum(increase(reservation_reminder_total[15m])) > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "已提醒的预约订单未按时入列"
+            description: "检查订单状态与 Celery Worker，确认是否存在支付状态或锁阻塞。"
+        - alert: NaichaReconciliationDiscrepancyPersist
+          expr: max_over_time(reconciliation_diff_count{type="unmatched_payments"}[24h]) > 0
+          for: 1d
+          labels:
+            severity: warning
+          annotations:
+            summary: "对账存在未匹配支付"
+            description: "连续 24 小时检测到未匹配支付，请查看 CSV 报表或日志进行人工对账。"
+        - alert: NaichaReconciliationRuntimeHigh
+          expr: histogram_quantile(0.95, sum(rate(celery_task_runtime_seconds_bucket{task=\"run_daily_reconciliation\"}[1h])) by (le)) > 60
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "每日对账任务执行时间超过 60 秒"
+            description: "请检查数据库性能或是否存在锁等待，必要时拆分对账窗口。"

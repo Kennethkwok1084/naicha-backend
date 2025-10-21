@@ -4,9 +4,10 @@ import hashlib
 import json
 import secrets
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,11 +16,13 @@ from app.core.settings import Settings
 from app.models.accounts import User
 from app.models.catalog import Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import IdempotencyKey, Order, OrderItem
+from app.metrics.orders import ORDER_CREATE_TOTAL
 from app.schemas.order import (
     OrderCreateRequestSchema,
     OrderPaymentJsapiRequestSchema,
     OrderPaymentNativeRequestSchema,
 )
+from app.services.reservations import ReservationService, ReservationValidationError
 
 
 class OrderServiceError(Exception):
@@ -71,28 +74,37 @@ class OrderService:
         if actor_guest_session:
             await self._validate_guest_session(actor_guest_session)
 
-        payload_dict = payload.model_dump()
+        payload_dict = payload.model_dump(mode="json")
         payload_hash = self._hash_payload(payload_dict)
 
-        if self._session.in_transaction():
-            return await self._create_order_internal(
-                payload=payload,
-                idempotency_key=idempotency_key,
-                payload_hash=payload_hash,
-                user=user,
-                guest_session_id=actor_guest_session,
-                post_create=post_create,
-            )
-
-        async with self._session.begin():
-            return await self._create_order_internal(
-                payload=payload,
-                idempotency_key=idempotency_key,
-                payload_hash=payload_hash,
-                user=user,
-                guest_session_id=actor_guest_session,
-                post_create=post_create,
-            )
+        try:
+            if self._session.in_transaction():
+                result = await self._create_order_internal(
+                    payload=payload,
+                    idempotency_key=idempotency_key,
+                    payload_hash=payload_hash,
+                    user=user,
+                    guest_session_id=actor_guest_session,
+                    post_create=post_create,
+                )
+            else:
+                async with self._session.begin():
+                    result = await self._create_order_internal(
+                        payload=payload,
+                        idempotency_key=idempotency_key,
+                        payload_hash=payload_hash,
+                        user=user,
+                        guest_session_id=actor_guest_session,
+                        post_create=post_create,
+                    )
+        except OrderServiceError:
+            ORDER_CREATE_TOTAL.labels(result="service_error").inc()
+            raise
+        except Exception:
+            ORDER_CREATE_TOTAL.labels(result="unexpected_error").inc()
+            raise
+        ORDER_CREATE_TOTAL.labels(result="success").inc()
+        return result
 
     async def _create_order_internal(
         self,
@@ -104,14 +116,29 @@ class OrderService:
         guest_session_id: str | None,
         post_create: Callable[[Order, list[OrderItem]], Awaitable[None]] | None,
     ) -> dict[str, Any]:
-        
+
         idempotency_record, cached_response = await self._ensure_idempotency(
             idempotency_key, payload_hash
         )
         if cached_response is not None:
             return cached_response
 
-        order = await self._build_order_entity(payload, user, guest_session_id)
+        reservation_plan = None
+        if payload.scheduled_at is not None:
+            if payload.order_type != "pickup":
+                raise OrderValidationError("目前仅支持到店自提预约。")
+            reservation_service = ReservationService(self._session, self._settings)
+            try:
+                reservation_plan = await reservation_service.plan(payload.scheduled_at)
+            except ReservationValidationError as exc:
+                raise OrderValidationError(str(exc)) from exc
+
+        order = await self._build_order_entity(
+            payload,
+            user,
+            guest_session_id,
+            reservation_plan=reservation_plan,
+        )
         self._session.add(order)
         await self._session.flush()
 
@@ -305,9 +332,12 @@ class OrderService:
         payload: OrderCreateRequestSchema,
         user: User | None,
         guest_session_id: str | None,
+        *,
+        reservation_plan,
     ) -> Order:
         order_number = self._generate_order_number()
         address_json = payload.address.model_dump() if payload.address else None
+        scheduled_at = reservation_plan.scheduled_at_utc if reservation_plan else None
 
         order = Order(
             order_number=order_number,
@@ -322,6 +352,8 @@ class OrderService:
             source="user",
             payment_channel=None,
             created_by_admin_id=None,
+            is_scheduled=bool(reservation_plan),
+            scheduled_at=scheduled_at,
         )
         return order
 
@@ -398,7 +430,10 @@ class OrderService:
             "status": order.status,
             "order_type": order.order_type,
             "total_price": float(order.total_price),
-            "created_at": order.created_at.isoformat(),
+            "created_at": self._serialize_datetime(order.created_at),
+            "is_scheduled": order.is_scheduled,
+            "scheduled_at": self._serialize_datetime(order.scheduled_at),
+            "reminder_sent_at": self._serialize_datetime(order.reminder_sent_at),
             "items": [
                 {
                     "item_id": item.item_id,
@@ -424,3 +459,11 @@ class OrderService:
         millis = int(now.microsecond / 1000)
         random_suffix = secrets.token_hex(3).upper()
         return f"{timestamp}{millis:03d}-NA{random_suffix}"
+
+    @staticmethod
+    def _serialize_datetime(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat()

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 from typing import Final
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.accounts import Coupon, LoyaltyTransaction, User
-from app.models.orders import Order
 from app.core.settings import Settings, get_settings
 from app.metrics.loyalty import COUPON_ISSUED_TOTAL, LOYALTY_POINTS_AWARDED_TOTAL
+from app.models.accounts import Coupon, LoyaltyTransaction, User
+from app.models.orders import Order
 
 ORDER_PAID_REASON: Final = "order_paid"
 COUPON_GRANT_REASON: Final = "coupon_grant"

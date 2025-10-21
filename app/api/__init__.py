@@ -7,10 +7,10 @@ from app.api.routes import (
     menu,
     orders,
     payments,
-    placeholders,
     shop,
     system,
     users,
+    want,
     ws,
 )
 
@@ -24,5 +24,5 @@ api_router.include_router(menu.router)
 api_router.include_router(shop.router)
 api_router.include_router(orders.router)
 api_router.include_router(payments.router)
-api_router.include_router(placeholders.router)
+api_router.include_router(want.router)
 api_router.include_router(ws.router)

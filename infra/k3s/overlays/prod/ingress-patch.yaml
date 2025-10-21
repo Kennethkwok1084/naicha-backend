@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: naicha-api
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rps: "60"
+spec:
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: tls-naicha
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: naicha-api
+                port:
+                  number: 80

@@ -373,6 +373,7 @@
   "order_type": "pickup",
   "notes": "少冰",
   "guest_session_id": "gs_xxx",
+  "scheduled_at": "2025-10-21T09:30:00+08:00",
   "address": {
     "contact_name": "林小白",
     "phone": "13800001234",
@@ -391,6 +392,9 @@
   "order_type": "pickup",
   "total_price": 26.0,
   "created_at": "2025-10-17T15:30:45.123456+00:00",
+  "is_scheduled": true,
+  "scheduled_at": "2025-10-21T01:30:00+00:00",
+  "reminder_sent_at": null,
   "items": [
     {
       "item_id": 12345,
@@ -413,6 +417,7 @@
 ```
 - **错误码**：
   - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架
+  - 422 预约时间不合法（非当日/未在营业时间/未带时区）
   - 403 游客会话不匹配目标订单
   - 409 Idempotency-Key 与历史请求不一致
 - **副作用**：写库 `orders`、`order_items`、`idempotency_keys`
@@ -426,6 +431,37 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-17：首次发布
+  - 2025-10-24：支持预约下单（`scheduled_at` 字段，需携带时区；仅 pickup，当日+提前 15 分钟）
+
+### 提交「想要」事件
+- **状态**：新增 （日期：2025-10-24）
+- **路径/方法**：`POST /api/v1/products/{product_id}/want`
+- **权限**：登录用户 JWT（优先使用用户 ID） | 游客（根据客户端 IP 哈希）
+- **幂等要求**：否（服务侧 1 分钟限频）
+- **限流**：SlowAPI `20/minute`（key：用户 ID 或 IP）
+- **请求体**：无
+- **响应体**：
+```json
+{
+  "product_id": 101,
+  "created_at": "2025-10-24T03:10:00Z",
+  "source": "user"
+}
+```
+- **错误码**：
+  - 404 Product not available —— 商品已下架或不存在
+  - 429 Want rate limit exceeded —— 同一用户/IP 1 分钟仅允许一次
+  - 503 Want feature is disabled —— Feature Flag `want_enabled` 关闭
+- **副作用**：写入 `want_events`（记录 user_id/ip_hash/user_agent），触发 `/menu` 缓存刷新
+- **审计记录**：否
+- **观测指标**：后续补充（计划 `want_event_total`）
+- **测试清单**：
+  - [x] 登录用户/游客流
+  - [x] 限流（用户 ID 与 IP 分别判定）
+  - [x] Feature Flag 关闭
+  - [ ] 性能阈值
+- **变更历史**：
+  - 2025-10-24：首次发布
 
 ### 发起微信 JSAPI 支付
 - **状态**：新增 （日期：2025-10-17）
@@ -621,6 +657,69 @@
 - **变更历史**：
   - 2025-10-21：首次发布（M4）
 
+### 更新商品库存状态
+- **状态**：新增 （日期：2025-10-24）
+- **路径/方法**：`PUT /api/v1/admin/inventory/products/{product_id}`
+- **权限**：管理员 JWT（角色：admin/manager）
+- **幂等要求**：是（重复写同状态无副作用）
+- **限流**：SlowAPI `20/minute`（key：管理员 Token/IP）
+- **请求体**：
+```json
+{
+  "inventory_status": "sold_out"
+}
+```
+- **响应体**：
+```json
+{
+  "product_id": 101,
+  "inventory_status": "sold_out",
+  "updated_at": "2025-10-24T03:12:00Z"
+}
+```
+- **错误码**：
+  - 403 Insufficient role for inventory updates —— 非 admin/manager 角色
+  - 404 Product not found —— 商品不存在
+  - 422 inventory_status must be in_stock or sold_out
+- **副作用**：写库 `products.inventory_status`，写入 `audit_logs`（action=`admin.inventory.product.update`），触发菜单缓存失效
+- **审计记录**：记录 admin_id、前后状态、IP、UA
+- **观测指标**：待补（计划 `inventory_update_total{type="product"}`）
+- **测试清单**：
+  - [x] 商品售罄与恢复
+  - [x] 权限拦截
+  - [x] 菜单缓存刷新
+- **变更历史**：
+  - 2025-10-24：首次发布
+
+### 更新规格库存状态
+- **状态**：新增 （日期：2025-10-24）
+- **路径/方法**：`PUT /api/v1/admin/inventory/spec-options/{option_id}`
+- **权限**：管理员 JWT（角色：admin/manager）
+- **幂等要求**：是
+- **限流**：SlowAPI `20/minute`
+- **请求体**：同上
+- **响应体**：
+```json
+{
+  "spec_option_id": 3001,
+  "inventory_status": "sold_out",
+  "updated_at": "2025-10-24T03:12:15Z"
+}
+```
+- **错误码**：
+  - 403 Insufficient role for inventory updates
+  - 404 Spec option not found
+  - 422 inventory_status must be in_stock or sold_out
+- **副作用**：写库 `spec_options.inventory_status`，写审计（action=`admin.inventory.spec_option.update`），刷新 `/menu` 缓存
+- **审计记录**：记录 admin_id、前后状态、IP、UA
+- **观测指标**：同上（type=`spec_option`）
+- **测试清单**：
+  - [x] 规格售罄与恢复
+  - [x] 权限拦截
+  - [x] 菜单缓存刷新
+- **变更历史**：
+  - 2025-10-24：首次发布
+
 ### 静态码支付匹配
 - **状态**：新增 （日期：2025-10-21）
 - **路径/方法**：`POST /api/v1/admin/payments/match`
@@ -667,6 +766,42 @@
   - [x] 幂等积分/发券
 - **变更历史**：
   - 2025-10-21：首次发布（M4）
+
+### 想要统计概览
+- **状态**：新增 （日期：2025-10-24）
+- **路径/方法**：`GET /api/v1/admin/want/stats`
+- **权限**：管理员 JWT
+- **幂等要求**：是（读接口；限流 10 req/min/admin）
+- **查询参数**：
+  - `range=1d|7d|30d`（默认 7d）
+  - `limit`（默认 20，范围 1~100）
+- **响应体**：
+```json
+{
+  "range": "7d",
+  "start": "2025-10-17T16:00:00Z",
+  "end": "2025-10-24T15:59:59Z",
+  "top_products": [
+    {"product_id": 101, "product_name": "阿萨姆奶茶", "total": 56}
+  ],
+  "daily_series": [
+    {"date": "2025-10-18", "count": 8},
+    {"date": "2025-10-19", "count": 5}
+  ]
+}
+```
+- **错误码**：
+  - 422 Unsupported range —— `range` 不在白名单
+- **副作用**：无
+- **审计记录**：否
+- **观测指标**：待补（计划 `want_stats_query_latency_ms`）
+- **测试清单**：
+  - [x] 默认 7 日窗口
+  - [x] range 白名单校验
+  - [x] TopN 补零
+  - [ ] 性能阈值
+- **变更历史**：
+  - 2025-10-24：首次发布
 
 ### 商家数据看板
 - **状态**：新增 （日期：2025-10-21）

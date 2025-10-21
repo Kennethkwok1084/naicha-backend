@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -28,10 +29,19 @@ from app.schemas import (
     AdminPaymentMatchRequestSchema,
     AdminPaymentMatchResponseSchema,
     DashboardResponseSchema,
+    InventoryProductResponseSchema,
+    InventorySpecOptionResponseSchema,
+    InventoryUpdateRequestSchema,
     OrderCreateRequestSchema,
     TokenSchema,
+    WantStatsResponseSchema,
 )
 from app.services.auth import AuthService
+from app.services.dashboard import DashboardService
+from app.services.inventory import (
+    InventoryNotFoundError,
+    InventoryService,
+)
 from app.services.orders import (
     OrderConflictError,
     OrderService,
@@ -43,7 +53,7 @@ from app.services.payment_match import (
     PaymentMatchNotFoundError,
     PaymentMatchService,
 )
-from app.services.dashboard import DashboardService
+from app.services.want import WantService
 from app.workers import enqueue_print_job
 from app.ws.manager import merchant_notifier
 
@@ -52,6 +62,7 @@ logger = get_logger(__name__)
 
 _POS_ALLOWED_ROLES: set[str] = {"admin", "manager", "clerk"}
 _POS_IMMEDIATE_CHANNELS: set[str] = {"cash", "pos_card"}
+_INVENTORY_ALLOWED_ROLES: set[str] = {"admin", "manager"}
 
 
 def _admin_rate_limit_key(request: Request) -> str:
@@ -65,6 +76,18 @@ async def get_dashboard_service(
     session: AsyncSession = Depends(get_async_session),
 ) -> DashboardService:
     return DashboardService(session, get_settings())
+
+
+async def get_inventory_service(
+    session: AsyncSession = Depends(get_async_session),
+) -> InventoryService:
+    return InventoryService(session, get_settings())
+
+
+async def get_want_service(
+    session: AsyncSession = Depends(get_async_session),
+) -> WantService:
+    return WantService(session, get_settings())
 
 
 @router.post("/login", response_model=TokenSchema)
@@ -357,3 +380,135 @@ async def get_admin_dashboard(
             detail=str(exc),
         ) from exc
     return DashboardResponseSchema.model_validate(payload)
+
+
+def _ensure_inventory_role(admin: Admin) -> None:
+    if admin.role not in _INVENTORY_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient role for inventory updates.",
+        )
+
+
+async def _load_json(request: Request) -> dict[str, object]:
+    try:
+        return await request.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body.",
+        ) from exc
+
+
+def _parse_inventory_payload(request_body: dict[str, object]) -> InventoryUpdateRequestSchema:
+    try:
+        return InventoryUpdateRequestSchema.model_validate(request_body)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
+@router.put(
+    "/inventory/products/{product_id}",
+    response_model=InventoryProductResponseSchema,
+    summary="更新商品库存状态",
+)
+@limiter.limit("20/minute", key_func=_admin_rate_limit_key)
+async def update_product_inventory(
+    request: Request,
+    response: Response,
+    product_id: int,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: InventoryService = Depends(get_inventory_service),
+) -> InventoryProductResponseSchema:
+    _ensure_inventory_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_inventory_payload(raw)
+
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            product = await service.update_product_inventory(
+                product_id=product_id,
+                inventory_status=payload.inventory_status,
+                admin=admin,
+                ip=request.client.host if request.client else None,
+                user_agent=request.headers.get("User-Agent"),
+            )
+        except InventoryNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return InventoryProductResponseSchema(
+        product_id=product.product_id,
+        inventory_status=product.inventory_status,
+        updated_at=product.updated_at,
+    )
+
+
+@router.put(
+    "/inventory/spec-options/{option_id}",
+    response_model=InventorySpecOptionResponseSchema,
+    summary="更新规格库存状态",
+)
+@limiter.limit("20/minute", key_func=_admin_rate_limit_key)
+async def update_spec_option_inventory(
+    request: Request,
+    response: Response,
+    option_id: int,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: InventoryService = Depends(get_inventory_service),
+) -> InventorySpecOptionResponseSchema:
+    _ensure_inventory_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_inventory_payload(raw)
+
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            option = await service.update_spec_option_inventory(
+                option_id=option_id,
+                inventory_status=payload.inventory_status,
+                admin=admin,
+                ip=request.client.host if request.client else None,
+                user_agent=request.headers.get("User-Agent"),
+            )
+        except InventoryNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return InventorySpecOptionResponseSchema(
+        spec_option_id=option.option_id,
+        inventory_status=option.inventory_status,
+        updated_at=datetime.now(tz=UTC),
+    )
+
+
+@router.get(
+    "/want/stats",
+    response_model=WantStatsResponseSchema,
+    summary="想要统计概览",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def get_want_stats(
+    request: Request,
+    response: Response,
+    range: str = Query(default="7d"),
+    limit: int = Query(default=20, ge=1, le=100),
+    admin: Admin = Depends(get_current_admin),
+    want_service: WantService = Depends(get_want_service),
+) -> WantStatsResponseSchema:
+    try:
+        payload = await want_service.get_stats(range_key=range, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return WantStatsResponseSchema(
+        range=payload["range"],
+        start=payload["start"],
+        end=payload["end"],
+        top_products=payload["top_products"],
+        daily_series=payload["daily_series"],
+    )

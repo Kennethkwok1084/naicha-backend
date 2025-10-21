@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: naicha-api
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/server-snippet: |
+      client_max_body_size 5m;
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/modsecurity-snippet: |
+      SecRuleEngine On
+      SecRequestBodyAccess On
+      SecRule REQUEST_HEADERS:User-Agent "@rx (?i:sqlmap|nikto|fimap)" "id:10001,phase:1,deny,status:403,msg:'Scanner detected'"
+      SecRule ARGS|ARGS_NAMES|REQUEST_HEADERS "@rx (?i:(union(\s+all)?\s+select|select\s+.+\s+from))" "id:10002,phase:2,deny,status:403,msg:'SQLi pattern'"
+      SecRule REQUEST_URI "@contains ../" "id:10003,phase:1,deny,status:403,msg:'Path traversal'"
+spec:
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: tls-naicha
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: naicha-api
+                port:
+                  number: 80

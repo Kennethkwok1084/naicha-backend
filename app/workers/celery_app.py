@@ -33,6 +33,28 @@ beat_schedule.setdefault(
         "schedule": settings.print_recovery_interval_seconds,
     },
 )
+beat_schedule.setdefault(
+    "reservation_send_reminders",
+    {
+        "task": "app.workers.tasks.reservation_send_reminders",
+        "schedule": 60,
+    },
+)
+beat_schedule.setdefault(
+    "reservation_activate_due_orders",
+    {
+        "task": "app.workers.tasks.reservation_activate_due_orders",
+        "schedule": 60,
+    },
+)
+beat_schedule.setdefault(
+    "daily_reconciliation",
+    {
+        "task": "app.workers.tasks.run_daily_reconciliation",
+        "schedule": 86400,
+        "options": {"expires": 3600},
+    },
+)
 celery_app.conf.beat_schedule = beat_schedule
 
 celery_app.autodiscover_tasks(["app.workers"])

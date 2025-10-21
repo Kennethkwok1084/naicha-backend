@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from app.core.security import TokenScope, create_access_token
+from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import IdempotencyKey
+from app.models.shop import ShopProfile
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -238,4 +242,54 @@ async def test_create_order_api_requires_guest_session(db_session) -> None:
             data = with_session.json()
             assert data["items"][0]["product_id"] == 101
     finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_create_order_api_reservation_success(db_session) -> None:
+    await _seed_product(db_session)
+    user = User(user_id=5000, open_id="user-reservation-api")
+    profile = ShopProfile(
+        id=1,
+        timezone="Asia/Shanghai",
+        open_hours_json=[
+            {
+                "weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(),
+                "ranges": [["08:00", "22:00"]],
+            }
+        ],
+    )
+    db_session.add_all([user, profile])
+    await db_session.flush()
+
+    token = create_access_token(subject=str(user.user_id), scope=TokenScope.USER)
+    settings = get_settings()
+    original_flag = settings.reservation_enabled
+
+    scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=2)
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        settings.reservation_enabled = True
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/orders",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Idempotency-Key": "idem-reservation-api",
+                },
+                json={
+                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
+                    "order_type": "pickup",
+                    "scheduled_at": scheduled_local.isoformat(),
+                },
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["is_scheduled"] is True
+        assert payload["scheduled_at"].endswith("Z") or payload["scheduled_at"].endswith("+00:00")
+    finally:
+        settings.reservation_enabled = original_flag
         app.dependency_overrides.pop(get_async_session, None)

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: naicha-waf-snippet
+data:
+  modsecurity.conf: |
+    SecRuleEngine On
+    SecRequestBodyAccess On
+    SecAuditEngine RelevantOnly
+    SecAuditLog /var/log/nginx/modsec_audit.log
+    SecRule REQUEST_URI "@rx \.(?:bak|sql|ini|log)$" "id:11001,phase:1,deny,status:403,msg:'Block sensitive extensions'"
+    SecRule ARGS|ARGS_NAMES "@rx (?i:drop\s+table|update\s+.+\s+set)" "id:11002,phase:2,deny,status:403,msg:'Block DDL statements'"
+    SecRule REQUEST_HEADERS:Authorization "@rx (?i:basic\s+[a-z0-9+/=]{20,})" "id:11003,phase:1,deny,status:401,msg:'Block raw basic auth',log"
