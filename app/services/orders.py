@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
@@ -71,36 +71,34 @@ class OrderService:
         if payload.order_type == "delivery" and payload.address is None:
             raise OrderValidationError("Delivery order requires address.")
 
-        if actor_guest_session:
-            await self._validate_guest_session(actor_guest_session)
-
         payload_dict = payload.model_dump(mode="json")
         payload_hash = self._hash_payload(payload_dict)
 
+        started_transaction = False
         try:
-            if self._session.in_transaction():
-                result = await self._create_order_internal(
-                    payload=payload,
-                    idempotency_key=idempotency_key,
-                    payload_hash=payload_hash,
-                    user=user,
-                    guest_session_id=actor_guest_session,
-                    post_create=post_create,
-                )
-            else:
-                async with self._session.begin():
-                    result = await self._create_order_internal(
-                        payload=payload,
-                        idempotency_key=idempotency_key,
-                        payload_hash=payload_hash,
-                        user=user,
-                        guest_session_id=actor_guest_session,
-                        post_create=post_create,
-                    )
+            if not self._session.in_transaction():
+                await self._session.begin()
+                started_transaction = True
+
+            result = await self._create_order_internal(
+                payload=payload,
+                idempotency_key=idempotency_key,
+                payload_hash=payload_hash,
+                user=user,
+                guest_session_id=actor_guest_session,
+                post_create=post_create,
+            )
+
+            if started_transaction:
+                await self._session.commit()
         except OrderServiceError:
+            if started_transaction and self._session.in_transaction():
+                await self._session.rollback()
             ORDER_CREATE_TOTAL.labels(result="service_error").inc()
             raise
         except Exception:
+            if started_transaction and self._session.in_transaction():
+                await self._session.rollback()
             ORDER_CREATE_TOTAL.labels(result="unexpected_error").inc()
             raise
         ORDER_CREATE_TOTAL.labels(result="success").inc()
@@ -116,6 +114,8 @@ class OrderService:
         guest_session_id: str | None,
         post_create: Callable[[Order, list[OrderItem]], Awaitable[None]] | None,
     ) -> dict[str, Any]:
+        if guest_session_id:
+            await self._validate_guest_session(guest_session_id)
 
         idempotency_record, cached_response = await self._ensure_idempotency(
             idempotency_key, payload_hash
@@ -133,21 +133,12 @@ class OrderService:
             except ReservationValidationError as exc:
                 raise OrderValidationError(str(exc)) from exc
 
-        order = await self._build_order_entity(
-            payload,
-            user,
-            guest_session_id,
-            reservation_plan=reservation_plan,
-        )
-        self._session.add(order)
-        await self._session.flush()
-
         items_payload = payload.items
+        products, product_groups = await self._load_products_with_groups(items_payload)
         specs_lookup = await self._load_spec_options(items_payload)
-        product_groups = await self._load_product_groups(items_payload)
-        products = await self._load_products_with_lock(items_payload)
 
-        order_items = []
+        db_items_payload: list[dict[str, Any]] = []
+        response_items_base: list[dict[str, Any]] = []
         total_price = Decimal("0.00")
 
         for item in items_payload:
@@ -170,26 +161,105 @@ class OrderService:
             unit_price = self._calculate_unit_price(product.base_price, modifiers_total)
             total_price += unit_price * item.quantity
 
-            order_item = OrderItem(
-                order_id=order.order_id,
-                product_id=product.product_id,
-                product_name=product.name,
-                quantity=item.quantity,
-                unit_price=unit_price,
-                selected_specs_json=selected_specs,
+            db_items_payload.append(
+                {
+                    "product_id": product.product_id,
+                    "product_name": product.name,
+                    "quantity": item.quantity,
+                    "unit_price": unit_price,
+                    "selected_specs_json": selected_specs,
+                }
             )
-            order_items.append(order_item)
-            self._session.add(order_item)
+            response_items_base.append(
+                {
+                    "product_id": product.product_id,
+                    "product_name": product.name,
+                    "quantity": item.quantity,
+                    "unit_price": float(unit_price),
+                    "selected_specs": selected_specs,
+                }
+            )
 
-        order.total_price = total_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        await self._session.flush()
+        order_values = await self._build_order_entity(
+            payload,
+            user,
+            guest_session_id,
+            reservation_plan=reservation_plan,
+        )
+        order_values["total_price"] = total_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        order_stmt = (
+            insert(Order)
+            .values(order_values)
+            .returning(
+                Order.order_id,
+                Order.order_number,
+                Order.status,
+                Order.order_type,
+                Order.total_price,
+                Order.payment_status,
+                Order.payment_channel,
+                Order.is_scheduled,
+                Order.scheduled_at,
+                Order.reminder_sent_at,
+                Order.created_at,
+            )
+        )
+        order_result = await self._session.execute(order_stmt)
+        order_row = order_result.one()
+        order_id = order_row.order_id
+
+        for payload_item in db_items_payload:
+            payload_item["order_id"] = order_id
+
+        items_stmt = (
+            insert(OrderItem)
+            .returning(
+                OrderItem.item_id,
+                OrderItem.product_id,
+                OrderItem.product_name,
+                OrderItem.quantity,
+                OrderItem.unit_price,
+                OrderItem.selected_specs_json,
+            )
+        )
+        items_result = await self._session.execute(items_stmt, db_items_payload)
+        inserted_items = items_result.fetchall()
+
+        response_items: list[dict[str, Any]] = []
+        for base, row in zip(response_items_base, inserted_items, strict=True):
+            response_items.append(
+                {
+                    "item_id": row.item_id,
+                    "product_id": row.product_id,
+                    "product_name": row.product_name,
+                    "quantity": row.quantity,
+                    "unit_price": float(row.unit_price),
+                    "selected_specs": row.selected_specs_json or base["selected_specs"],
+                }
+            )
 
         if post_create is not None:
-            await post_create(order, order_items)
+            order_entity = await self._session.get(Order, order_id)
+            if order_entity is None:
+                raise OrderServiceError("订单创建后未能加载订单数据。")
 
-        await self._session.refresh(order)
+            items_entities_result = await self._session.execute(
+                select(OrderItem).where(OrderItem.order_id == order_id)
+            )
+            order_items_entities = list(items_entities_result.scalars().all())
 
-        response_payload = self._build_order_response(order, order_items)
+            await post_create(order_entity, order_items_entities)
+            await self._session.flush()
+            await self._session.refresh(order_entity)
+
+            refreshed_items_result = await self._session.execute(
+                select(OrderItem).where(OrderItem.order_id == order_id)
+            )
+            order_items_entities = list(refreshed_items_result.scalars().all())
+            response_payload = self._build_order_response(order_entity, order_items_entities)
+        else:
+            response_payload = self._build_order_response_from_row(order_row, response_items)
         idempotency_record.response_snapshot = response_payload
 
         return response_payload
@@ -281,51 +351,50 @@ class OrderService:
         if record.expire_at and record.expire_at < datetime.now(tz=UTC):
             raise OrderValidationError("Guest session has expired.")
 
-    async def _load_products_with_lock(self, items) -> dict[int, Product]:
+    async def _load_products_with_groups(
+        self, items
+    ) -> tuple[dict[int, Product], dict[int, set[int]]]:
+        """
+        批量加载商品及允许的规格组。
+
+        通过一次查询拿到商品和映射表，减少多次 round-trip。
+        """
         product_ids = {item.product_id for item in items}
         if not product_ids:
-            return {}
+            return {}, {}
 
-        stmt = select(Product).where(Product.product_id.in_(product_ids))
-        bind = self._session.get_bind()
-        if bind is not None and bind.dialect.name != "sqlite":
-            stmt = stmt.with_for_update()
-
-        result = await self._session.execute(stmt)
-        products = {product.product_id: product for product in result.scalars().all()}
-        return products
-
-    async def _load_product_groups(self, items) -> dict[int, set[int]]:
-        product_ids = {item.product_id for item in items}
-        if not product_ids:
-            return {}
-
-        stmt = select(ProductSpecMapping).where(
-            ProductSpecMapping.product_id.in_(product_ids)
+        stmt = (
+            select(Product, ProductSpecMapping.group_id)
+            .outerjoin(
+                ProductSpecMapping,
+                ProductSpecMapping.product_id == Product.product_id,
+            )
+            .where(Product.product_id.in_(product_ids))
         )
         result = await self._session.execute(stmt)
+        products: dict[int, Product] = {}
         product_groups: dict[int, set[int]] = {}
-        for mapping in result.scalars():
-            product_groups.setdefault(mapping.product_id, set()).add(mapping.group_id)
-        return product_groups
+        for product, group_id in result:
+            products.setdefault(product.product_id, product)
+            if group_id is not None:
+                product_groups.setdefault(product.product_id, set()).add(group_id)
+        return products, product_groups
 
     async def _load_spec_options(self, items) -> dict[int, tuple[SpecOption, SpecGroup | None]]:
         option_ids = {option_id for item in items for option_id in item.spec_option_ids}
         if not option_ids:
             return {}
 
-        options_stmt = select(SpecOption).where(SpecOption.option_id.in_(option_ids))
+        options_stmt = (
+            select(SpecOption, SpecGroup)
+            .outerjoin(SpecGroup, SpecGroup.group_id == SpecOption.group_id)
+            .where(SpecOption.option_id.in_(option_ids))
+        )
         options_result = await self._session.execute(options_stmt)
-        options = {option.option_id: option for option in options_result.scalars().all()}
-
-        group_ids = {option.group_id for option in options.values()}
-        groups: dict[int, SpecGroup] = {}
-        if group_ids:
-            group_stmt = select(SpecGroup).where(SpecGroup.group_id.in_(group_ids))
-            group_result = await self._session.execute(group_stmt)
-            groups = {group.group_id: group for group in group_result.scalars().all()}
-
-        return {option_id: (option, groups.get(option.group_id)) for option_id, option in options.items()}
+        lookup: dict[int, tuple[SpecOption, SpecGroup | None]] = {}
+        for option, group in options_result:
+            lookup[option.option_id] = (option, group)
+        return lookup
 
     async def _build_order_entity(
         self,
@@ -334,28 +403,27 @@ class OrderService:
         guest_session_id: str | None,
         *,
         reservation_plan,
-    ) -> Order:
+    ) -> dict[str, Any]:
         order_number = self._generate_order_number()
         address_json = payload.address.model_dump() if payload.address else None
         scheduled_at = reservation_plan.scheduled_at_utc if reservation_plan else None
 
-        order = Order(
-            order_number=order_number,
-            user_id=user.user_id if user else None,
-            guest_session_id=None if user else guest_session_id,
-            total_price=Decimal("0.00"),
-            notes=payload.notes,
-            status="pending_payment",
-            order_type=payload.order_type,
-            address_json=address_json,
-            payment_status="pending",
-            source="user",
-            payment_channel=None,
-            created_by_admin_id=None,
-            is_scheduled=bool(reservation_plan),
-            scheduled_at=scheduled_at,
-        )
-        return order
+        return {
+            "order_number": order_number,
+            "user_id": user.user_id if user else None,
+            "guest_session_id": None if user else guest_session_id,
+            "total_price": Decimal("0.00"),
+            "notes": payload.notes,
+            "status": "pending_payment",
+            "order_type": payload.order_type,
+            "address_json": address_json,
+            "payment_status": "pending",
+            "source": "user",
+            "payment_channel": None,
+            "created_by_admin_id": None,
+            "is_scheduled": bool(reservation_plan),
+            "scheduled_at": scheduled_at,
+        }
 
     def _pick_spec_options(
         self,
@@ -445,6 +513,24 @@ class OrderService:
                 }
                 for item in items
             ],
+        }
+
+    def _build_order_response_from_row(
+        self,
+        order_row,
+        items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "order_id": order_row.order_id,
+            "order_number": order_row.order_number,
+            "status": order_row.status,
+            "order_type": order_row.order_type,
+            "total_price": float(order_row.total_price),
+            "created_at": self._serialize_datetime(order_row.created_at),
+            "is_scheduled": bool(order_row.is_scheduled),
+            "scheduled_at": self._serialize_datetime(order_row.scheduled_at),
+            "reminder_sent_at": self._serialize_datetime(order_row.reminder_sent_at),
+            "items": items,
         }
 
     @staticmethod

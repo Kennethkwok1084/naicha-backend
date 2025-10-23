@@ -34,7 +34,7 @@ async def get_order_service(
 
 
 @router.post("", response_model=OrderResponseSchema, summary="创建订单")
-@limiter.limit("30/minute")
+# @limiter.limit("3000/minute")  # 临时禁用限流
 async def create_order(
     request: Request,
     response: Response,
@@ -75,7 +75,7 @@ async def create_order(
     response_model=OrderPaymentInitiateResponseSchema,
     summary="发起微信 JSAPI 支付",
 )
-@limiter.limit("60/minute")
+@limiter.limit("3000/minute")
 async def initiate_jsapi_payment(
     request: Request,
     order_id: int,
@@ -117,7 +117,7 @@ async def initiate_jsapi_payment(
     response_model=OrderPaymentInitiateResponseSchema,
     summary="发起微信 Native 支付",
 )
-@limiter.limit("60/minute")
+@limiter.limit("3000/minute")
 async def initiate_native_payment(
     request: Request,
     order_id: int,

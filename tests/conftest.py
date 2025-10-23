@@ -67,6 +67,9 @@ async def db_session(model_test_engine: AsyncEngine):
 
     async with session_factory() as session:
         try:
+            async with session.begin():
+                for table in reversed(Base.metadata.sorted_tables):
+                    await session.execute(table.delete())
             yield session
         finally:
             await session.rollback()

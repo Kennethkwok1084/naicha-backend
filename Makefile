@@ -2,7 +2,7 @@ PYTHON ?= python
 POETRY ?= poetry
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker perf-locust perf-ws
+.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker perf-locust perf-ws diag-payment
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -41,6 +41,13 @@ compose-up:
 
 compose-down:
 	docker compose down
+
+diag-payment:
+	@echo "=========================================="
+	@echo "支付回调诊断工具"
+	@echo "=========================================="
+	@if [ -z "$$PERF_SECRET_KEY" ]; then echo "⚠️  警告: PERF_SECRET_KEY 未设置"; fi
+	@$(PYTHON) scripts/test_payment_callback.py
 
 contract-test:
 	@set -euo pipefail; \

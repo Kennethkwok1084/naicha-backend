@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import structlog
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
@@ -16,11 +17,11 @@ from app.services.auth import AuthService
 from app.ws.manager import merchant_notifier
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
 @router.websocket("/ws/merchant")
 async def merchant_ws_gateway(
     websocket: WebSocket,
-    session: AsyncSession = Depends(get_async_session),
 ) -> None:
     token = websocket.query_params.get("token")
     if not token:
@@ -43,18 +44,28 @@ async def merchant_ws_gateway(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid subject")
         return
 
-    auth_service = AuthService(session)
-    admin = await auth_service.get_admin_by_id(admin_id)
-    if admin is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Admin not found")
-        return
-
-    await websocket.accept()
-    await merchant_notifier.register(websocket)
-    await websocket.send_json({"type": "connection.ready", "admin_id": admin.admin_id})
-    app_state = getattr(getattr(websocket, "app", None), "state", None)
-    settings = getattr(app_state, "settings", get_settings())
-    await _send_recent_orders(session, websocket, settings)
+    # 使用独立session验证admin并发送初始消息，用完立即释放连接池
+    async for session in get_async_session():
+        auth_service = AuthService(session)
+        admin = await auth_service.get_admin_by_id(admin_id)
+        if admin is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Admin not found")
+            return
+        
+        await websocket.accept()
+        logger.info("websocket_accepted", admin_id=admin_id)
+        await merchant_notifier.register(websocket)
+        logger.info("notifier_registered", admin_id=admin_id)
+        await websocket.send_json({"type": "connection.ready", "admin_id": admin.admin_id})
+        logger.info("sent_connection_ready", admin_id=admin_id)
+        app_state = getattr(getattr(websocket, "app", None), "state", None)
+        settings = getattr(app_state, "settings", get_settings())
+        await _send_recent_orders(session, websocket, settings)
+        logger.info("sent_recent_orders", admin_id=admin_id)
+        break  # 完成初始化后立即退出，释放session
+    
+    logger.info("entering_message_loop", admin_id=admin_id)
+    # session已释放，开始心跳和消息循环
     last_pong = datetime.now(tz=UTC)
     ping_interval = 30
     pong_grace = 5

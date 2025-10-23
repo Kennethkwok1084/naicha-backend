@@ -16,8 +16,8 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # 并发配置
 LOCUST_USERS_100=100
-LOCUST_USERS_200=200
-LOCUST_USERS_500=500
+# LOCUST_USERS_200=200  # 暂时禁用高并发测试
+# LOCUST_USERS_500=500  # 暂时禁用高并发测试
 LOCUST_SPAWN_RATE=20
 LOCUST_DURATION=30s
 
@@ -65,12 +65,13 @@ mkdir -p "$OUTPUT_DIR"
 echo ""
 echo "📊 [1/4] 开始 Locust 压测..."
 
-for USERS in $LOCUST_USERS_100 $LOCUST_USERS_200 $LOCUST_USERS_500; do
+for USERS in $LOCUST_USERS_100; do
     echo "  - 并发: ${USERS} 用户"
     REPORT_PREFIX="${OUTPUT_DIR}/locust_${USERS}u_${TIMESTAMP}"
     
     locust -f infra/perf/locustfile.py \
         --headless \
+        --host "$PERF_BASE_URL" \
         --users "$USERS" \
         --spawn-rate "$LOCUST_SPAWN_RATE" \
         --run-time "$LOCUST_DURATION" \

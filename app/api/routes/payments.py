@@ -17,6 +17,7 @@ from app.services.payments import (
 )
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
+legacy_router = APIRouter(prefix="/payments", tags=["payments"], include_in_schema=False)
 
 
 async def get_payment_service(
@@ -30,7 +31,7 @@ async def get_payment_service(
     response_model=PaymentNotifyResponseSchema,
     summary="微信支付回调",
 )
-@limiter.limit("120/minute")
+# @limiter.limit("18000/minute;300/second")  # 临时禁用限流
 async def wechat_payment_notify(
     request: Request,
     response: Response,
@@ -63,3 +64,13 @@ async def wechat_payment_notify(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return PaymentNotifyResponseSchema(**result)
+
+
+legacy_router.add_api_route(
+    "/notify/wechat",
+    wechat_payment_notify,
+    methods=["POST"],
+    response_model=PaymentNotifyResponseSchema,
+    summary="微信支付回调（兼容旧路径）",
+    include_in_schema=False,
+)

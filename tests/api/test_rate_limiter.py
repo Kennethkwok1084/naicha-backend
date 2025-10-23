@@ -10,6 +10,8 @@ from httpx import ASGITransport, AsyncClient
 @pytest.mark.asyncio
 async def test_rate_limiter_returns_429_when_exceeded() -> None:
     app = FastAPI()
+    original_enabled = limiter.enabled
+    limiter.enabled = True
     init_rate_limiter(app)
 
     @app.get("/limited")
@@ -26,3 +28,5 @@ async def test_rate_limiter_returns_429_when_exceeded() -> None:
         assert limited.status_code == 429
         assert limited.headers.get("X-RateLimit-Remaining") == "0"
         assert "Retry-After" in limited.headers
+
+    limiter.enabled = original_enabled

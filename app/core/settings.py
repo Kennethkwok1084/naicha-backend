@@ -19,6 +19,9 @@ class Settings(BaseSettings):
 
     secret_key: str = Field(alias="SECRET_KEY")
     jwt_expire_minutes: int = Field(default=43200, alias="JWT_EXPIRE_MINUTES")
+    
+    # Performance testing secret key for payment callback simulation
+    perf_secret_key: str | None = Field(default=None, alias="PERF_SECRET_KEY")
 
     database_url: str = Field(alias="DATABASE_URL")
     database_proxy_url: str | None = Field(default=None, alias="DATABASE_PROXY_URL")
@@ -65,10 +68,15 @@ class Settings(BaseSettings):
     loyalty_points_min_order: float = Field(default=0.0, alias="LOYALTY_POINTS_MIN_ORDER")
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_file: str | None = Field(default=None, alias="LOG_FILE")
+    log_dir: str = Field(default="logs", alias="LOG_DIR")
     allowed_origins_raw: str = Field(
         default="http://localhost:3000,http://localhost:5173", alias="ALLOWED_ORIGINS"
     )
     rate_limit_default: str = Field(default="300/minute", alias="RATE_LIMIT_DEFAULT")
+    perf_disable_http_overheads: bool = Field(
+        default=False, alias="PERF_DISABLE_HTTP_OVERHEADS"
+    )
 
     @field_validator("allowed_origins_raw", mode="before")
     def ensure_string(cls, value: str) -> str:
@@ -89,6 +97,10 @@ class Settings(BaseSettings):
     def rate_limit_default_limits(self) -> list[str]:
         limits = [limit.strip() for limit in self.rate_limit_default.split(",")]
         return [limit for limit in limits if limit]
+
+    @property
+    def disable_http_overheads(self) -> bool:
+        return self.perf_disable_http_overheads or self.app_env == "perf"
 
     @property
     def database_runtime_url(self) -> str:

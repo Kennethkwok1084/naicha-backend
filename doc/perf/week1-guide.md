@@ -22,9 +22,9 @@
 ```bash
 # 1. 设置环境变量
 export PERF_BASE_URL="http://127.0.0.1:8000"           # 或 staging 地址
-export PERF_USER_TOKEN="Bearer eyJhbGc..."             # 用户 Token
-export PERF_ADMIN_TOKEN="Bearer eyJhbGc..."            # 管理员 Token  
-export PERF_SECRET_KEY="your-secret-key"               # HMAC 密钥
+export PERF_USER_TOKEN="Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwic2NvcGUiOiJ1c2VyIiwiZXhwIjoxNzYzNzA2OTkwfQ.DHLZwtGCYeQ905YFLqnFPkrO__JQsS5E1pEodpTI4Qo"            # 用户 Token
+export PERF_ADMIN_TOKEN="Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwic2NvcGUiOiJhZG1pbiIsImV4cCI6MTc2MzcwNjk5MH0.VdB2nozD-M8EIW88tIZiReAteL-cqA5QcVius0ZQ2Wo"         # 管理员 Token  
+export PERF_SECRET_KEY="change_me"               # HMAC 密钥
 
 # 2. 执行完整压测（约 5-10 分钟）
 bash infra/perf/run_baseline.sh

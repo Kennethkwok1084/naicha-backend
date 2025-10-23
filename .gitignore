@@ -146,7 +146,8 @@ Desktop.ini
 *.log
 *.sql
 *.sqlite
-
+logs/
+perf_results/
 # Node
 node_modules/
 npm-debug.log*

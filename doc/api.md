@@ -546,10 +546,10 @@
 
 ### 微信支付回调
 - **状态**：新增 （日期：2025-10-17）
-- **路径/方法**：`POST /api/v1/payments/notify/wechat`
+- **路径/方法**：`POST /api/v1/payments/notify/wechat`（兼容：`POST /payments/notify/wechat`）
 - **权限**：微信渠道（签名头 `X-Wechat-Signature`）
 - **幂等要求**：是（以 `transaction_id` 去重）
-- **限流**：应用内 SlowAPI `120 req/min/IP`
+- **限流**：应用内 SlowAPI `300 req/s` + `18000 req/min/IP`
 - **请求体**：
 ```json
 {

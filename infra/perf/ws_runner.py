@@ -84,7 +84,8 @@ async def ws_worker(idx: int, args: argparse.Namespace, stats: WsStats, lock: as
                     break
 
                 await asyncio.sleep(heartbeat_interval)
-    except Exception:
+    except Exception as e:
+        print(f"Worker {idx} error: {type(e).__name__}: {e}")
         async with lock:
             stats.failures += 1
         return
@@ -95,6 +96,10 @@ async def ws_worker(idx: int, args: argparse.Namespace, stats: WsStats, lock: as
 
 
 def build_ws_url(base_url: str, token: str) -> str:
+    # 去除 "Bearer " 前缀（如果存在）
+    if token.startswith("Bearer "):
+        token = token[7:]
+    
     separator = "&" if "?" in base_url else "?"
     if "{token}" in base_url:
         return base_url.replace("{token}", token)

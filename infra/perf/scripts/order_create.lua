@@ -10,12 +10,13 @@ if not order_body or order_body == "" then
 {
   "items": [
     {
-      "product_id": 101,
+      "product_id": 1,
       "quantity": 1,
-      "spec_option_ids": [101]
+      "spec_option_ids": []
     }
   ],
   "order_type": "pickup",
+  "guest_session_id": "guest-perf-001",
   "notes": "wrk 压测"
 }
 ]]

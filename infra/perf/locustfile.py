@@ -53,9 +53,8 @@ class NaichaUser(HttpUser):
             self._base_headers["Authorization"] = bearer
         self._secret_key = os.getenv("PERF_SECRET_KEY", "")
         if not self._secret_key:
-            self.environment.events.log.fire(
-                level="WARNING", message="PERF_SECRET_KEY 未设置，支付回调任务将被跳过。"
-            )
+            import logging
+            logging.warning("PERF_SECRET_KEY 未设置，支付回调任务将被跳过。")
         self._order_templates = load_order_templates(os.getenv("PERF_ORDER_TEMPLATE"))
         self._recent_orders: list[PaymentContext] = []
 
@@ -83,31 +82,54 @@ class NaichaUser(HttpUser):
             json=payload,
             name="POST /orders",
         )
+        # 只在成功创建订单时才添加到回调队列
         if response.status_code != 200:
+            import logging
+            logging.warning(
+                f"订单创建失败 status={response.status_code}, "
+                f"不会触发回调: {response.text[:100]}"
+            )
             return
 
-        data = response.json()
-        channel = random.choice(PAYMENT_CHANNELS)
-        self._recent_orders.append(
-            PaymentContext(
-                order_id=data["order_id"],
-                order_number=data["order_number"],
-                total_price=data["total_price"],
-                channel=channel,
+        try:
+            data = response.json()
+            # 验证响应数据完整性
+            if not all(k in data for k in ["order_id", "order_number", "total_price"]):
+                import logging
+                logging.warning(f"订单响应数据不完整，跳过: {data}")
+                return
+            
+            channel = random.choice(PAYMENT_CHANNELS)
+            self._recent_orders.append(
+                PaymentContext(
+                    order_id=data["order_id"],
+                    order_number=data["order_number"],
+                    total_price=data["total_price"],
+                    channel=channel,
+                )
             )
-        )
-        if len(self._recent_orders) > 100:
-            self._recent_orders = self._recent_orders[-50:]
+            # 限制缓存大小，保留最近的订单
+            if len(self._recent_orders) > 100:
+                self._recent_orders = self._recent_orders[-50:]
+        except (KeyError, ValueError) as e:
+            import logging
+            logging.error(f"解析订单响应失败: {e}, response={response.text[:100]}")
 
     @task(1)
     def payment_notify(self) -> None:
-        if not self._secret_key or not self._recent_orders:
+        # 前置检查：密钥和订单队列
+        if not self._secret_key:
+            return
+        if not self._recent_orders:
             return
 
+        # 按配置的概率触发回调
         if random.random() > PAYMENT_NOTIFY_RATIO:
             return
 
         target = random.choice(self._recent_orders)
+        
+        # 构造回调载荷
         payload = {
             "event_id": f"evt_{uuid4().hex[:16]}",
             "order_number": target.order_number,
@@ -116,8 +138,8 @@ class NaichaUser(HttpUser):
             "currency": "CNY",
             "channel": target.channel,
             "status": "SUCCESS",
-            "paid_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "raw_notification": {"debug": True},
+            "paid_at": time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+            "raw_notification": {"debug": True, "locust_test": True},
         }
 
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -129,7 +151,31 @@ class NaichaUser(HttpUser):
             data=body,
             headers=headers,
             name="POST /payments/notify/wechat",
+            catch_response=True,
         )
-        if result.status_code == 200:
-            # 支持 WebSocket 广播检验时使用
-            target.channel = payload["channel"]
+        
+        # 详细错误日志
+        if result.status_code == 404:
+            import logging
+            try:
+                error_detail = result.json().get("detail", "Unknown")
+                logging.warning(
+                    f"支付回调 404: order_number={target.order_number}, "
+                    f"detail={error_detail}"
+                )
+                # 如果是订单不存在，从队列移除该订单
+                if "not found" in error_detail.lower():
+                    self._recent_orders.remove(target)
+                    result.failure(f"订单不存在: {target.order_number}")
+            except Exception:
+                logging.error(f"支付回调 404，无法解析响应: {result.text[:100]}")
+                result.failure("支付回调 404")
+        elif result.status_code == 200:
+            result.success()
+        else:
+            import logging
+            logging.warning(
+                f"支付回调异常: status={result.status_code}, "
+                f"order={target.order_number}, response={result.text[:100]}"
+            )
+            result.failure(f"HTTP {result.status_code}")

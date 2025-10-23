@@ -219,12 +219,121 @@
 
 ## 每日对账任务排查
 
+### 对账脚本使用
+
+**脚本路径**：`scripts/reconcile_payments.py`
+
+**功能**：封装 `ReconciliationService`，支持指定日期、CSV 导出、差异告警，用于日常运维或 CI 验收。
+
+**基本用法**：
+
+```bash
+# 1. 对上一自然日对账（默认行为）
+python scripts/reconcile_payments.py
+
+# 2. 指定日期对账（格式 YYYY-MM-DD）
+python scripts/reconcile_payments.py --date 2025-10-22
+
+# 3. 强制导出 CSV（覆盖 RECONCILIATION_CSV_ENABLED 配置）
+python scripts/reconcile_payments.py --csv
+
+# 4. 严格模式（发现差异时退出码为 1，适用于 CI/CD）
+python scripts/reconcile_payments.py --strict
+
+# 5. 限制输出记录数（默认 10）
+python scripts/reconcile_payments.py --limit 20
+
+# 6. 组合使用（常用于发布前验收）
+python scripts/reconcile_payments.py --date 2025-10-22 --strict --csv
+```
+
+**输出示例**（无差异）：
+
+```
+=== Reconciliation Summary ===
+range: 2025-10-22T00:00:00+00:00 ~ 2025-10-23T00:00:00+00:00
+differences: 0
+
+orders_missing_payment: 0
+orders_missing_refund: 0
+unmatched_payments: 0
+
+✅ reconciliation clean
+```
+
+**输出示例**（有差异）：
+
+```
+=== Reconciliation Summary ===
+range: 2025-10-22T00:00:00+00:00 ~ 2025-10-23T00:00:00+00:00
+differences: 3
+
+orders_missing_payment: 2
+  - {'order_id': 123, 'order_number': 'NA20251022120345-001234', 'total_price': 45.00}
+  - {'order_id': 124, 'order_number': 'NA20251022120456-001235', 'total_price': 38.50}
+
+orders_missing_refund: 0
+
+unmatched_payments: 1
+  - {'pay_id': 456, 'channel': 'wechat_native', 'amount': 50.00, 'paid_at': '2025-10-22T14:30:00'}
+
+⚠️ differences detected, manual investigation required
+```
+
+**退出码**：
+
+- `0`：对账完成且无差异，或有差异但未启用 `--strict`
+- `1`：启用 `--strict` 时发现差异
+
+**适用场景**：
+
+1. **日常运维**：每日凌晨自动运行，检查前一天订单与支付记录一致性
+2. **发布前验收**：在部署流水线中添加 `python scripts/reconcile_payments.py --strict`，差异时阻止发布
+3. **手动排查**：财务对账时指定日期范围导出 CSV，逐条核对
+4. **CI 集成**：在 GitLab CI/GitHub Actions 中定期运行，差异时发送告警通知
+
+**定时任务配置**（cron 示例）：
+
+```bash
+# 每日凌晨 1 点对前一天对账，差异时发送告警邮件
+0 1 * * * cd /path/to/naicha-backend && /path/to/.venv/bin/python scripts/reconcile_payments.py --strict --csv || echo "Reconciliation failed" | mail -s "对账差异告警" ops@example.com
+```
+
+**Kubernetes CronJob 示例**：
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-reconciliation
+spec:
+  schedule: "0 1 * * *"  # 每日凌晨 1 点
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: reconcile
+            image: naicha-backend:latest
+            command:
+            - python
+            - scripts/reconcile_payments.py
+            - --strict
+            - --csv
+          restartPolicy: OnFailure
+```
+
+---
+
+### 对账差异排查流程
+
 1. **查看执行日志**
    - 日志关键字：`reconciliation.summary` / `reconciliation.csv_written`
    - 指标：`reconciliation_run_total{result=*}`、`reconciliation_diff_count{type=*}`
+
 2. **核对差异**
    ```sql
-   SELECT order_id, order_number, payment_status, status, total_price
+   SELECT order_id, order_number, status, total_price, created_at
    FROM orders
    WHERE order_id = ANY(:order_ids);
    ```

@@ -17,7 +17,13 @@ configure_logging(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.core.db_profiler import setup_query_profiling
+    from app.db.session import engine
     from app.ws.manager import merchant_notifier
+
+    # 启用SQL查询性能分析
+    if settings.app_env == "dev":
+        setup_query_profiling(engine)
 
     await merchant_notifier.startup()
     try:
@@ -39,10 +45,11 @@ def create_app() -> FastAPI:
     app.state.settings = settings
 
     init_middleware(app, settings)
-    init_rate_limiter(app)
+    # init_rate_limiter(app)  # 临时禁用限流以进行性能测试
     init_exception_handlers(app)
 
-    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    if not settings.disable_http_overheads:
+        app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.include_router(api_router)
 
     return app

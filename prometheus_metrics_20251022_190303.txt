@@ -1,0 +1,108 @@
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 139479.0
+python_gc_objects_collected_total{generation="1"} 279887.0
+python_gc_objects_collected_total{generation="2"} 754835.0
+# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC
+# TYPE python_gc_objects_uncollectable_total counter
+python_gc_objects_uncollectable_total{generation="0"} 0.0
+python_gc_objects_uncollectable_total{generation="1"} 0.0
+python_gc_objects_uncollectable_total{generation="2"} 0.0
+# HELP python_gc_collections_total Number of times this generation was collected
+# TYPE python_gc_collections_total counter
+python_gc_collections_total{generation="0"} 3052.0
+python_gc_collections_total{generation="1"} 277.0
+python_gc_collections_total{generation="2"} 25.0
+# HELP python_info Python platform information
+# TYPE python_info gauge
+python_info{implementation="CPython",major="3",minor="12",patchlevel="3",version="3.12.3"} 1.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 3.51920128e+08
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 1.66096896e+08
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.76113093158e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 57.65
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 74.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1.048576e+06
+# HELP admin_order_created_total Number of POS orders created by admins.
+# TYPE admin_order_created_total counter
+# HELP admin_order_create_latency_ms Latency for POS order creation handled by admin endpoints.
+# TYPE admin_order_create_latency_ms histogram
+# HELP admin_dashboard_query_latency_ms Latency for admin dashboard queries.
+# TYPE admin_dashboard_query_latency_ms histogram
+# HELP order_create_total 订单创建处理结果计数。
+# TYPE order_create_total counter
+order_create_total{result="success"} 1403.0
+# HELP order_create_created 订单创建处理结果计数。
+# TYPE order_create_created gauge
+order_create_created{result="success"} 1.761130984326609e+09
+# HELP payment_match_attempt_total Number of admin payment match attempts grouped by result.
+# TYPE payment_match_attempt_total counter
+# HELP payment_callback_total 微信支付通知处理次数按结果分类。
+# TYPE payment_callback_total counter
+# HELP payment_callback_latency_ms 微信支付通知处理耗时(毫秒)。
+# TYPE payment_callback_latency_ms histogram
+payment_callback_latency_ms_bucket{le="5.0"} 0.0
+payment_callback_latency_ms_bucket{le="10.0"} 0.0
+payment_callback_latency_ms_bucket{le="20.0"} 0.0
+payment_callback_latency_ms_bucket{le="40.0"} 0.0
+payment_callback_latency_ms_bucket{le="80.0"} 0.0
+payment_callback_latency_ms_bucket{le="160.0"} 0.0
+payment_callback_latency_ms_bucket{le="320.0"} 0.0
+payment_callback_latency_ms_bucket{le="640.0"} 0.0
+payment_callback_latency_ms_bucket{le="1280.0"} 0.0
+payment_callback_latency_ms_bucket{le="2560.0"} 0.0
+payment_callback_latency_ms_bucket{le="5120.0"} 0.0
+payment_callback_latency_ms_bucket{le="+Inf"} 0.0
+payment_callback_latency_ms_count 0.0
+payment_callback_latency_ms_sum 0.0
+# HELP payment_callback_latency_ms_created 微信支付通知处理耗时(毫秒)。
+# TYPE payment_callback_latency_ms_created gauge
+payment_callback_latency_ms_created 1.7611309321791368e+09
+# HELP loyalty_points_awarded_total Total loyalty points awarded after payment.
+# TYPE loyalty_points_awarded_total counter
+# HELP coupon_issued_total Coupons issued through loyalty automation.
+# TYPE coupon_issued_total counter
+# HELP celery_task_runtime_seconds Runtime of Celery tasks in seconds
+# TYPE celery_task_runtime_seconds histogram
+# HELP reservation_reminder_total Number of reservation reminders marked
+# TYPE reservation_reminder_total counter
+reservation_reminder_total 0.0
+# HELP reservation_reminder_created Number of reservation reminders marked
+# TYPE reservation_reminder_created gauge
+reservation_reminder_created 1.761130932252166e+09
+# HELP reservation_activated_total Number of reservation orders activated
+# TYPE reservation_activated_total counter
+reservation_activated_total 0.0
+# HELP reservation_activated_created Number of reservation orders activated
+# TYPE reservation_activated_created gauge
+reservation_activated_created 1.7611309322521737e+09
+# HELP reconciliation_run_total Daily reconciliation execution count
+# TYPE reconciliation_run_total counter
+# HELP reconciliation_diff_count Latest reconciliation difference counts
+# TYPE reconciliation_diff_count gauge
+# HELP want_event_total Total number of want events recorded.
+# TYPE want_event_total counter
+# HELP admin_want_stats_latency_ms Latency of admin want stats aggregation in milliseconds.
+# TYPE admin_want_stats_latency_ms histogram
+# HELP menu_cache_lookup_total 菜单缓存查询次数按结果分类。
+# TYPE menu_cache_lookup_total counter
+menu_cache_lookup_total{result="miss"} 15.0
+menu_cache_lookup_total{result="hit"} 24038.0
+# HELP menu_cache_lookup_created 菜单缓存查询次数按结果分类。
+# TYPE menu_cache_lookup_created gauge
+menu_cache_lookup_created{result="miss"} 1.761130983924526e+09
+menu_cache_lookup_created{result="hit"} 1.761130984692809e+09
+# HELP menu_cache_hit_rate 菜单缓存命中率(0-1)。
+# TYPE menu_cache_hit_rate gauge
+menu_cache_hit_rate 0.9993763771670894
