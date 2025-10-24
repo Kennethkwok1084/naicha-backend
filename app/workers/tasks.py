@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from threading import Lock
 
 import redis
-from redis.exceptions import RedisError
 from celery.utils.log import get_task_logger
+from redis.exceptions import RedisError
 
 from app.core.settings import Settings, get_settings
 from app.db.session import async_session_factory

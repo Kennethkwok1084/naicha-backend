@@ -56,6 +56,14 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
     async def fake_broadcast(message):
         broadcasts.append(message)
 
+    # Mock distributed_lock to always succeed in tests
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def mock_distributed_lock(*args, **kwargs):
+        yield True  # Always acquire lock successfully
+
+    monkeypatch.setattr("app.services.payment_match.distributed_lock", mock_distributed_lock)
     monkeypatch.setattr("app.services.payment_match.enqueue_print_job", fake_enqueue)
     monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", fake_broadcast)
 
@@ -112,7 +120,7 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_admin_payment_match_ambiguous_returns_candidates(db_session) -> None:
+async def test_admin_payment_match_ambiguous_returns_candidates(db_session, monkeypatch) -> None:
     admin = Admin(admin_id=510, username="match-amb", password_hash="x", role="admin")
     user = User(user_id=610, open_id="openid-amb")
     db_session.add_all([admin, user])
@@ -142,6 +150,15 @@ async def test_admin_payment_match_ambiguous_returns_candidates(db_session) -> N
     )
     db_session.add(payment)
     await db_session.flush()
+
+    # Mock distributed_lock to always succeed in tests
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def mock_distributed_lock(*args, **kwargs):
+        yield True
+
+    monkeypatch.setattr("app.services.payment_match.distributed_lock", mock_distributed_lock)
 
     token = _admin_token(admin.admin_id)
     app.dependency_overrides[get_async_session] = lambda: db_session
@@ -222,6 +239,14 @@ async def test_admin_payment_match_manual_force_success(db_session, monkeypatch)
     async def noop_broadcast(*_args, **_kwargs):
         return None
 
+    # Mock distributed_lock to always succeed in tests
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def mock_distributed_lock(*args, **kwargs):
+        yield True
+
+    monkeypatch.setattr("app.services.payment_match.distributed_lock", mock_distributed_lock)
     monkeypatch.setattr("app.services.payment_match.enqueue_print_job", fake_enqueue)
     monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
 

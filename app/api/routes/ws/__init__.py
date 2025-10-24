@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import structlog
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
+import structlog
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

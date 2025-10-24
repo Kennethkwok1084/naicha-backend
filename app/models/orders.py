@@ -12,8 +12,8 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
-    text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column

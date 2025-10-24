@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import copy
+import inspect
 import time
 from collections import defaultdict
 from threading import Lock
 from typing import Any
 
-import redis
+import redis.asyncio as redis
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,39 +62,57 @@ def _get_version_client(settings: Settings) -> redis.Redis | None:
         return client
 
 
-def _read_remote_menu_version(settings: Settings) -> int | None:
+async def _read_remote_menu_version(settings: Settings) -> int | None:
     client = _get_version_client(settings)
     if client is None:
         return None
     try:
-        value = client.get(_MENU_VERSION_KEY)
-        if value is None:
-            client.set(_MENU_VERSION_KEY, "0", nx=True)
-            value = client.get(_MENU_VERSION_KEY)
-        if value is None:
+        raw_value = await client.get(_MENU_VERSION_KEY)
+        if raw_value is None:
+            was_set = await client.set(_MENU_VERSION_KEY, "0", nx=True)
+            if was_set:
+                raw_value = "0"
+            else:
+                raw_value = await client.get(_MENU_VERSION_KEY)
+        if raw_value is None:
             return None
-        return int(value)
+        return int(raw_value)
     except (RedisError, ValueError) as exc:
         logger.warning("menu.cache.version_read_failed", error=str(exc))
         _disable_menu_version_tracking()
         return None
 
 
-def _bump_remote_menu_version(settings: Settings) -> None:
+async def _bump_remote_menu_version(settings: Settings) -> None:
     client = _get_version_client(settings)
     if client is None:
         return
     try:
-        client.incr(_MENU_VERSION_KEY)
+        await client.incr(_MENU_VERSION_KEY)
     except RedisError as exc:
         logger.warning("menu.cache.version_bump_failed", error=str(exc))
         _disable_menu_version_tracking()
 
 
+async def _resolve_maybe_awaitable(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 def invalidate_menu_cache(settings: Settings | None = None) -> None:
     _MENU_CACHE.clear()
     active_settings = settings or get_settings()
-    _bump_remote_menu_version(active_settings)
+
+    async def _bump_async() -> None:
+        await _resolve_maybe_awaitable(_bump_remote_menu_version(active_settings))
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_bump_async())
+    else:
+        _ = loop.create_task(_bump_async())  # Fire and forget background task
 
 
 class MenuService:
@@ -104,12 +124,12 @@ class MenuService:
         self._remote_version_snapshot: int | None = None
 
     async def get_menu_payload(self) -> dict[str, Any]:
-        cached = self._load_from_cache()
+        cached = await self._load_from_cache()
         if cached is not None:
             return cached
 
         payload = await self._build_menu_payload()
-        self._store_to_cache(payload)
+        await self._store_to_cache(payload)
         return payload
 
     async def _build_menu_payload(self) -> dict[str, Any]:
@@ -236,7 +256,7 @@ class MenuService:
             "options": [copy.deepcopy(option) for option in group["options"]],
         }
 
-    def _load_from_cache(self) -> dict[str, Any] | None:
+    async def _load_from_cache(self) -> dict[str, Any] | None:
         entry = _MENU_CACHE.get(self.CACHE_KEY)
         if not entry:
             record_cache_miss()
@@ -247,7 +267,7 @@ class MenuService:
             record_cache_miss()
             return None
 
-        remote_version = self._fetch_remote_version()
+        remote_version = await self._fetch_remote_version()
         if remote_version is not None and cached_version != remote_version:
             _MENU_CACHE.pop(self.CACHE_KEY, None)
             record_cache_miss()
@@ -256,15 +276,15 @@ class MenuService:
         record_cache_hit()
         return payload
 
-    def _store_to_cache(self, payload: dict[str, Any]) -> None:
+    async def _store_to_cache(self, payload: dict[str, Any]) -> None:
         ttl = max(self._settings.menu_cache_ttl_seconds, 0)
         expires_at = time.time() + ttl
         version = self._remote_version_snapshot
         if version is None:
-            version = self._fetch_remote_version()
+            version = await self._fetch_remote_version()
         _MENU_CACHE[self.CACHE_KEY] = (expires_at, version, payload)
 
-    def _fetch_remote_version(self) -> int | None:
-        version = _read_remote_menu_version(self._settings)
+    async def _fetch_remote_version(self) -> int | None:
+        version = await _resolve_maybe_awaitable(_read_remote_menu_version(self._settings))
         self._remote_version_snapshot = version
         return version

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
-import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from time import perf_counter
-from typing import Any
 from types import SimpleNamespace
+from typing import Any
 
 from sqlalchemy import insert, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import UnmappedInstanceError
 from structlog import get_logger
 

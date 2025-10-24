@@ -1,0 +1,182 @@
+groups:
+  - name: naicha_backend_alerts
+    interval: 30s
+    rules:
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # P0 告警 - 业务核心指标
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      
+      - alert: HighOrderCreateErrorRate
+        expr: |
+          (
+            rate(order_create_errors_total[5m]) 
+            / 
+            rate(order_create_total[5m])
+          ) > 0.005
+        for: 5m
+        labels:
+          severity: critical
+          component: order_service
+        annotations:
+          summary: "下单错误率过高 ({{ $value | humanizePercentage }})"
+          description: "过去 5 分钟下单错误率超过 0.5%，当前值: {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.example.com/runbook/order-create-errors"
+
+      - alert: HighPaymentCallbackErrorRate
+        expr: |
+          (
+            rate(payment_callback_total{result="error"}[5m]) 
+            / 
+            rate(payment_callback_total[5m])
+          ) > 0.005
+        for: 5m
+        labels:
+          severity: critical
+          component: payment_service
+        annotations:
+          summary: "支付回调错误率过高 ({{ $value | humanizePercentage }})"
+          description: "过去 5 分钟支付回调错误率超过 0.5%，可能导致丢单或重复处理"
+          runbook_url: "https://wiki.example.com/runbook/payment-callback-errors"
+
+      - alert: RedisDown
+        expr: redis_up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis 服务不可用 (172.21.48.1)"
+          description: "Redis 已宕机超过 1 分钟，将导致分布式锁失败、菜单缓存版本同步失败"
+          runbook_url: "https://wiki.example.com/runbook/redis-down"
+
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # P1 告警 - 性能与资源
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      - alert: DistributedLockAcquisitionFailed
+        expr: rate(payment_match_attempt_total{result="lock_failed"}[1m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          component: distributed_lock
+        annotations:
+          summary: "分布式锁获取失败率过高"
+          description: "过去 1 分钟内锁获取失败超过 10 次/分钟，可能是 Redis 连接问题或并发冲突"
+          runbook_url: "https://wiki.example.com/runbook/distributed-lock-failed"
+
+      - alert: MenuCacheVersionSyncFailed
+        expr: rate(menu_cache_version_read_failed_total[1m]) > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: menu_service
+        annotations:
+          summary: "菜单缓存版本同步失败"
+          description: "过去 1 分钟内版本读取失败超过 5 次/分钟，Redis 可能不稳定"
+          runbook_url: "https://wiki.example.com/runbook/menu-cache-version-sync"
+
+      - alert: PrintJobRetryExhausted
+        expr: rate(print_job_retry_exhausted_total[1m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+          component: print_service
+        annotations:
+          summary: "打印任务重试耗尽"
+          description: "打印任务重试次数超过上限，可能是打印机离线或 webhook 故障"
+          runbook_url: "https://wiki.example.com/runbook/print-job-exhausted"
+
+      - alert: DatabaseConnectionPoolNearLimit
+        expr: |
+          (
+            db_pool_connections_used 
+            / 
+            (db_pool_size + db_pool_max_overflow)
+          ) > 0.85
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "数据库连接池使用率过高 ({{ $value | humanizePercentage }})"
+          description: "连接池使用率超过 85%，可能导致连接等待或超时。当前配置: pool_size=20, max_overflow=30"
+          runbook_url: "https://wiki.example.com/runbook/db-pool-exhaustion"
+
+      - alert: HighRateLimiterBlockedRequests
+        expr: rate(rate_limiter_blocked_requests_total[1m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+          component: rate_limiter
+        annotations:
+          summary: "限流阻断请求过多"
+          description: "过去 1 分钟内被限流阻断的请求超过 100 次/分钟，可能是恶意流量或误配置"
+          runbook_url: "https://wiki.example.com/runbook/rate-limiter-blocked"
+
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # P2 告警 - 延迟与队列
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      - alert: HighOrderCreateLatency
+        expr: |
+          histogram_quantile(0.99, 
+            rate(order_create_latency_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: info
+          component: order_service
+        annotations:
+          summary: "下单 P99 延迟过高 ({{ $value }}s)"
+          description: "过去 5 分钟下单 P99 延迟超过 1 秒，用户体验可能受影响"
+
+      - alert: HighPaymentCallbackLatency
+        expr: |
+          histogram_quantile(0.99, 
+            rate(payment_callback_latency_ms_bucket[5m])
+          ) > 1000
+        for: 5m
+        labels:
+          severity: info
+          component: payment_service
+        annotations:
+          summary: "支付回调 P99 延迟过高 ({{ $value }}ms)"
+          description: "过去 5 分钟支付回调 P99 延迟超过 1000ms，可能影响订单及时更新"
+
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length{queue="print_jobs"} > 100
+        for: 5m
+        labels:
+          severity: info
+          component: celery
+        annotations:
+          summary: "Celery 打印队列堆积 ({{ $value }} 任务)"
+          description: "打印队列中待处理任务超过 100 个，可能是消费速度不足或打印机故障"
+
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # 基础设施告警
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      - alert: HighRedisCommandLatency
+        expr: |
+          histogram_quantile(0.99, 
+            rate(redis_command_duration_seconds_bucket[5m])
+          ) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis 命令 P99 延迟过高 ({{ $value }}s)"
+          description: "Redis 命令延迟超过 10ms，可能影响分布式锁和缓存性能"
+
+      - alert: HighDatabaseSlowQueries
+        expr: rate(db_slow_queries_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "数据库慢查询过多"
+          description: "过去 5 分钟慢查询超过 10 次/分钟 (阈值 100ms)"
+          runbook_url: "https://wiki.example.com/runbook/slow-queries"

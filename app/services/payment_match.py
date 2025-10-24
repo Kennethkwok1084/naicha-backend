@@ -18,6 +18,7 @@ from app.schemas import (
     AdminPaymentMatchResponseSchema,
 )
 from app.services.loyalty import LoyaltyService
+from app.utils.distributed_lock import distributed_lock
 from app.workers import enqueue_print_job
 from app.ws.manager import merchant_notifier
 
@@ -61,11 +62,69 @@ class PaymentMatchService:
         ip: str | None,
         user_agent: str | None,
     ) -> AdminPaymentMatchResponseSchema:
+        """执行静态码支付匹配,使用分布式锁防止并发冲突。
+        
+        锁策略:
+        1. 若提供 transaction_id,锁定该交易记录 (防止重复匹配同一笔支付)
+        2. 若未提供 transaction_id 但有 qr_session_id,锁定该 QR 会话 (防止同一静态码并发匹配)
+        3. 否则锁定 (amount, time_window) 组合 (防止金额+时间窗口冲突)
+        
+        失败降级: Redis 不可用时记录错误日志并抛出 503,拒绝处理以保证数据一致性。
+        """
         paid_at = self._ensure_timezone(payload.paid_at)
         amount = Decimal(str(payload.amount)).quantize(Decimal("0.01"))
         window_minutes = max(self._settings.static_match_time_window_min, 1)
         window_start = paid_at - timedelta(minutes=window_minutes)
         window_end = paid_at + timedelta(minutes=window_minutes)
+
+        # 构建分布式锁键 (优先级: transaction_id > qr_session_id > amount+time)
+        if payload.transaction_id:
+            lock_key = f"payment_match:txn:{payload.transaction_id}"
+        elif payload.qr_session_id:
+            lock_key = f"payment_match:qr:{payload.qr_session_id}"
+        else:
+            # 使用金额和时间窗口哈希作为锁键 (降低碰撞概率)
+            lock_suffix = f"{amount}_{int(paid_at.timestamp())}"
+            lock_key = f"payment_match:fuzzy:{lock_suffix}"
+
+        async with distributed_lock(lock_key, timeout=10, blocking=False) as acquired:
+            if not acquired:
+                # 未获取到锁,说明有并发请求正在处理同一资源,拒绝服务
+                self._logger.warning(
+                    "payment_match.lock_acquisition_failed",
+                    lock_key=lock_key,
+                    transaction_id=payload.transaction_id,
+                    qr_session_id=payload.qr_session_id,
+                )
+                PAYMENT_MATCH_ATTEMPT_TOTAL.labels(result="lock_failed").inc()
+                raise PaymentMatchConflictError(
+                    "Concurrent match request detected. Please retry after a few seconds."
+                )
+
+            return await self._do_match_payment(
+                admin=admin,
+                payload=payload,
+                amount=amount,
+                paid_at=paid_at,
+                window_start=window_start,
+                window_end=window_end,
+                ip=ip,
+                user_agent=user_agent,
+            )
+
+    async def _do_match_payment(
+        self,
+        *,
+        admin: Admin,
+        payload: AdminPaymentMatchRequestSchema,
+        amount: Decimal,
+        paid_at: datetime,
+        window_start: datetime,
+        window_end: datetime,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> AdminPaymentMatchResponseSchema:
+        """执行实际的匹配逻辑 (已在分布式锁保护下)。"""
 
         broadcast_payload: dict[str, Any] | None = None
         job_to_enqueue: int | None = None

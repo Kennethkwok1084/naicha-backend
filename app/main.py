@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
 
     init_middleware(app, settings)
-    # init_rate_limiter(app)  # 临时禁用限流以进行性能测试
+    init_rate_limiter(app)
     init_exception_handlers(app)
 
     if not settings.disable_http_overheads:

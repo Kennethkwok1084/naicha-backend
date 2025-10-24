@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, alias="APP_PORT")
 
     secret_key: str = Field(alias="SECRET_KEY")
-    jwt_expire_minutes: int = Field(default=43200, alias="JWT_EXPIRE_MINUTES")
+    jwt_expire_minutes: int = Field(default=10080, alias="JWT_EXPIRE_MINUTES")  # 7天, 上线前从30天缩短
     
     # Performance testing secret key for payment callback simulation
     perf_secret_key: str | None = Field(default=None, alias="PERF_SECRET_KEY")

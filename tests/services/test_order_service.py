@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import asyncio
+import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -10,8 +10,8 @@ import pytest
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
-from app.models.shop import ShopProfile
 from app.models.orders import IdempotencyKey
+from app.models.shop import ShopProfile
 from app.schemas import (
     OrderCreateRequestSchema,
     OrderItemCreateSchema,

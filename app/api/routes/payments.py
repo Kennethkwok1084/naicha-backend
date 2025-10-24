@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.rate_limiter import limiter
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.schemas import PaymentNotifyResponseSchema, WechatPaymentNotifySchema

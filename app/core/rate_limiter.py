@@ -11,7 +11,7 @@ limiter = Limiter(
     key_func=get_remote_address,
     default_limits=settings.rate_limit_default_limits or None,
     headers_enabled=True,
-    enabled=False,  # 临时禁用限流以进行性能测试
+    enabled=not settings.perf_disable_http_overheads,
 )
 
 
