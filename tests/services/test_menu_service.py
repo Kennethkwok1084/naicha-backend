@@ -28,6 +28,7 @@ async def _seed_basic_menu(db_session) -> None:
         base_price=Decimal("18.50"),
         status="active",
         inventory_status="in_stock",
+        stock_quantity=30,
     )
     product_inactive = Product(
         product_id=99,
@@ -35,6 +36,7 @@ async def _seed_basic_menu(db_session) -> None:
         base_price=Decimal("10"),
         status="inactive",
         inventory_status="in_stock",
+        stock_quantity=0,
     )
     spec_group = SpecGroup(group_id=10, name="甜度", sort_order=1)
     spec_option = SpecOption(
@@ -54,6 +56,7 @@ async def _seed_basic_menu(db_session) -> None:
         base_price=Decimal("3.00"),
         status="active",
         inventory_status="in_stock",
+        stock_quantity=100,
     )
 
     db_session.add_all(

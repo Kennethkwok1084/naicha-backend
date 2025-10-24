@@ -11,6 +11,7 @@ from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.shop import ShopProfile
+from app.models.orders import IdempotencyKey
 from app.schemas import (
     OrderCreateRequestSchema,
     OrderItemCreateSchema,
@@ -35,6 +36,7 @@ async def _seed_menu(db_session):
         base_price=Decimal("12.00"),
         status="active",
         inventory_status="in_stock",
+        stock_quantity=50,
     )
     group = SpecGroup(group_id=1, name="甜度", sort_order=1)
     option = SpecOption(
@@ -74,6 +76,90 @@ async def test_create_order_with_idempotency(db_session) -> None:
 
     second = await service.create_order(payload=payload, idempotency_key="idem-001", user=user)
     assert second == first
+
+
+@pytest.mark.asyncio
+async def test_create_order_idempotency_race_condition(model_test_engine) -> None:
+    session_factory = async_sessionmaker(model_test_engine, expire_on_commit=False)
+
+    if model_test_engine.dialect.name == "sqlite":
+        pytest.skip("SQLite 无法可靠模拟幂等键并发锁场景。")
+
+    async with session_factory() as setup_session:
+        async with setup_session.begin():
+            await _seed_menu(setup_session)
+            user = User(user_id=101, open_id="race-user")
+            setup_session.add(user)
+
+    settings = get_settings()
+
+    payload = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        order_type="pickup",
+        notes="race",
+    )
+
+    async def create_once():
+        async with session_factory() as session:
+            user = await session.get(User, 101)
+            assert user is not None
+            service = OrderService(session, settings)
+            return await service.create_order(
+                payload=payload,
+                idempotency_key="idem-race",
+                user=user,
+            )
+
+    first, second = await asyncio.gather(create_once(), create_once())
+    assert first == second
+
+    async with session_factory() as verify_session:
+        record = await verify_session.get(IdempotencyKey, "idem-race")
+    assert record is not None
+    assert record.response_snapshot is not None
+
+
+@pytest.mark.asyncio
+async def test_create_order_deducts_product_stock(db_session) -> None:
+    await _seed_menu(db_session)
+    product = await db_session.get(Product, 1)
+    assert product is not None
+    product.stock_quantity = 2
+    db_session.add(product)
+    await db_session.flush()
+
+    user = User(user_id=5, open_id="stock-user")
+    db_session.add(user)
+    await db_session.flush()
+
+    service = OrderService(db_session, get_settings())
+
+    payload = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        order_type="pickup",
+    )
+    result = await service.create_order(payload=payload, idempotency_key="stock-1", user=user)
+    assert result["order_id"] > 0
+
+    await db_session.refresh(product)
+    assert product.stock_quantity == 1
+    assert product.inventory_status == "in_stock"
+
+    payload_second = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        order_type="pickup",
+    )
+    await service.create_order(payload=payload_second, idempotency_key="stock-2", user=user)
+    await db_session.refresh(product)
+    assert product.stock_quantity == 0
+    assert product.inventory_status == "sold_out"
+
+    payload_third = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        order_type="pickup",
+    )
+    with pytest.raises(OrderValidationError):
+        await service.create_order(payload=payload_third, idempotency_key="stock-3", user=user)
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from time import perf_counter
@@ -13,6 +14,8 @@ from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.exc import UnmappedInstanceError
 from structlog import get_logger
 
 from app.core.settings import Settings
@@ -145,16 +148,94 @@ class PaymentService:
                         txn_id=payload.transaction_id,
                     )
 
+                bind = getattr(self._session, "bind", None)
+                if bind is not None:
+                    dialect_name = getattr(bind.dialect, "name", "")
+                else:
+                    async with self._session.connection() as conn:
+                        dialect_name = conn.dialect.name
+
                 print_job = existing_print_job
                 job_candidate: PrintJob | None = None
+                job_id_from_existing: int | None = None
+                created_new_job = False
+
                 if print_job is None:
-                    print_job = PrintJob(order_id=order.order_id, status="pending")
-                    self._session.add(print_job)
+                    inserted_job_id: int | None = None
+                    try:
+                        if dialect_name == "postgresql":
+                            insert_stmt = (
+                                pg_insert(PrintJob)
+                                .values(order_id=order.order_id, status="pending")
+                                .on_conflict_do_nothing(index_elements=[PrintJob.order_id])
+                                .returning(PrintJob.job_id)
+                            )
+                        elif dialect_name == "sqlite":
+                            insert_stmt = (
+                                sqlite_insert(PrintJob)
+                                .values(order_id=order.order_id, status="pending")
+                                .on_conflict_do_nothing(index_elements=[PrintJob.order_id])
+                                .returning(PrintJob.job_id)
+                            )
+                        else:
+                            insert_stmt = (
+                                insert(PrintJob)
+                                .values(order_id=order.order_id, status="pending")
+                                .execution_options(ignore_conflicts=True)
+                                .returning(PrintJob.job_id)
+                            )
+                        insert_result = await self._session.execute(insert_stmt)
+                        inserted_job_id = insert_result.scalar_one_or_none()
+                    except IntegrityError:
+                        inserted_job_id = None
+
+                    if inserted_job_id is not None:
+                        print_job = await self._session.get(PrintJob, inserted_job_id)
+                        created_new_job = True
+                    else:
+                        select_job_stmt = select(PrintJob).where(PrintJob.order_id == order.order_id)
+                        if dialect_name != "sqlite":
+                            select_job_stmt = select_job_stmt.with_for_update()
+                        job_result = await self._session.execute(select_job_stmt)
+                        print_job = job_result.scalar_one_or_none()
+                        if print_job is None and dialect_name == "sqlite":
+                            waited = 0.0
+                            interval = 0.02
+                            max_wait = 5.0
+                            while print_job is None and waited < max_wait:
+                                await asyncio.sleep(interval)
+                                waited += interval
+                                job_result = await self._session.execute(
+                                    select(PrintJob).where(PrintJob.order_id == order.order_id)
+                                )
+                                print_job = job_result.scalar_one_or_none()
+                        if print_job is None:
+                            raise PaymentServiceError("Print job not found after upsert.")
+
+                if created_new_job:
+                    print_job.next_try_at = now_utc
                     job_candidate = print_job
-                elif print_job.status in {"pending", "failed"}:
+                elif print_job.status == "failed":
                     print_job.status = "pending"
                     print_job.next_try_at = now_utc
                     job_candidate = print_job
+                elif print_job.status == "pending":
+                    if dialect_name != "sqlite":
+                        print_job.next_try_at = now_utc
+                        job_candidate = print_job
+                    else:
+                        job_id_from_existing = print_job.job_id
+                        sync_session = self._session.sync_session
+                        try:
+                            sync_session.expunge(print_job)
+                        except UnmappedInstanceError:
+                            pass
+                        if job_id_from_existing is not None:
+                            await self._session.execute(
+                                update(PrintJob)
+                                    .where(PrintJob.job_id == job_id_from_existing)
+                                    .values(next_try_at=now_utc)
+                            )
 
                 if status_changed:
                     broadcast_payload = self._build_broadcast_payload(
@@ -176,6 +257,8 @@ class PaymentService:
 
                 if job_candidate is not None and job_candidate.job_id is not None:
                     job_to_enqueue = job_candidate.job_id
+                elif job_id_from_existing is not None:
+                    job_to_enqueue = job_id_from_existing
 
             if status_changed and broadcast_payload is not None:
                 try:

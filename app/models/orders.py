@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -211,6 +212,7 @@ class PrintJob(Base, TimestampMixin):
             "status IN ('pending','processing','done','failed')",
             name="ck_print_jobs_status",
         ),
+        UniqueConstraint("order_id", name="uq_print_jobs_order_id"),
     )
 
 

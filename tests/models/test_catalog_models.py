@@ -27,6 +27,7 @@ async def test_product_defaults_and_category_relationship(db_session) -> None:
 
     assert product.status == "active"
     assert product.inventory_status == "in_stock"
+    assert product.stock_quantity == 0
 
     product.categories.append(category)
     await db_session.flush()

@@ -42,6 +42,7 @@ class Product(Base, TimestampMixin):
     inventory_status: Mapped[str] = mapped_column(
         String(20), server_default="in_stock", nullable=False
     )
+    stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     __table_args__ = (
         CheckConstraint(
@@ -51,6 +52,10 @@ class Product(Base, TimestampMixin):
         CheckConstraint(
             "inventory_status IN ('in_stock','sold_out')",
             name="ck_products_inventory_status",
+        ),
+        CheckConstraint(
+            "stock_quantity >= 0",
+            name="ck_products_stock_quantity_non_negative",
         ),
     )
 

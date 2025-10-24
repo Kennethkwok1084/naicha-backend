@@ -78,7 +78,8 @@ async def seed_test_data() -> None:
                 description="用于压测的测试商品",
                 base_price=10.00,
                 status="active",
-                inventory_status="in_stock"
+                inventory_status="in_stock",
+                stock_quantity=9999
             )
             session.add(product)
             await session.flush()

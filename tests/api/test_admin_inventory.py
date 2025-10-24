@@ -35,6 +35,7 @@ async def _seed_menu(db_session) -> tuple[Product, SpecOption]:
         status="active",
         inventory_status="in_stock",
         category_id=category.category_id,
+        stock_quantity=60,
     )
     mapping = ProductCategory(product_id=product.product_id, category_id=category.category_id)
 

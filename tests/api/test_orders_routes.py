@@ -28,6 +28,7 @@ async def _seed_product(db_session) -> None:
         base_price=Decimal("15.00"),
         status="active",
         inventory_status="in_stock",
+        stock_quantity=100,
     )
     group = SpecGroup(group_id=101, name="加料", sort_order=1)
     option = SpecOption(
@@ -138,6 +139,7 @@ async def test_create_order_api_idempotency_under_concurrency(model_test_engine)
             base_price=Decimal("15.00"),
             status="active",
             inventory_status="in_stock",
+            stock_quantity=200,
         )
         group = SpecGroup(group_id=503, name="加料-并发", sort_order=1)
         option = SpecOption(

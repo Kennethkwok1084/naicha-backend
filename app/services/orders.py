@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import secrets
@@ -10,6 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
@@ -149,6 +152,13 @@ class OrderService:
                 raise OrderValidationError(f"Product {item.product_id} is inactive.")
             if product.inventory_status != "in_stock":
                 raise OrderValidationError(f"Product {item.product_id} is sold out.")
+            remaining_stock = getattr(product, "stock_quantity", None)
+            if remaining_stock is not None:
+                if remaining_stock < item.quantity:
+                    raise OrderValidationError(f"Product {item.product_id} is sold out.")
+                product.stock_quantity = remaining_stock - item.quantity
+                if product.stock_quantity == 0 and product.inventory_status != "sold_out":
+                    product.inventory_status = "sold_out"
 
             allowed_groups = product_groups.get(item.product_id, set())
             selected_specs, modifiers_total = self._pick_spec_options(
@@ -320,28 +330,73 @@ class OrderService:
     async def _ensure_idempotency(
         self, key: str, payload_hash: str
     ) -> tuple[IdempotencyKey, dict[str, Any] | None]:
-        record = await self._session.get(IdempotencyKey, key)
         expires_at = datetime.now(tz=UTC) + timedelta(hours=self.IDEMPOTENCY_TTL_HOURS)
+        bind = getattr(self._session, "bind", None)
+        if bind is not None:
+            dialect_name = getattr(bind.dialect, "name", "")
+        else:
+            async with self._session.connection() as conn:
+                dialect_name = conn.dialect.name
 
-        if record:
-            if record.scope != self.CREATE_SCOPE:
-                raise OrderConflictError("Idempotency key scope mismatch.")
-            if record.request_hash and record.request_hash != payload_hash:
-                raise OrderConflictError("Idempotency key reused with different payload.")
+        insert_payload = {
+            "idempotency_key": key,
+            "scope": self.CREATE_SCOPE,
+            "request_hash": payload_hash,
+            "expire_at": expires_at,
+        }
 
-            record.request_hash = record.request_hash or payload_hash
-            record.expire_at = expires_at
-            if record.response_snapshot is not None:
-                return record, record.response_snapshot
-            return record, None
+        if dialect_name == "postgresql":
+            insert_stmt = (
+                pg_insert(IdempotencyKey)
+                .values(insert_payload)
+                .on_conflict_do_nothing(index_elements=[IdempotencyKey.idempotency_key])
+            )
+        elif dialect_name == "sqlite":
+            insert_stmt = (
+                sqlite_insert(IdempotencyKey)
+                .values(insert_payload)
+                .on_conflict_do_nothing(index_elements=[IdempotencyKey.idempotency_key])
+            )
+        else:
+            insert_stmt = insert(IdempotencyKey).values(insert_payload).execution_options(
+                ignore_conflicts=True
+            )
 
-        record = IdempotencyKey(
-            idempotency_key=key,
-            scope=self.CREATE_SCOPE,
-            request_hash=payload_hash,
-            expire_at=expires_at,
-        )
-        self._session.add(record)
+        insert_result = await self._session.execute(insert_stmt)
+        inserted_here = bool(getattr(insert_result, "rowcount", 0))
+
+        select_stmt = select(IdempotencyKey).where(IdempotencyKey.idempotency_key == key)
+        if dialect_name != "sqlite":
+            select_stmt = select_stmt.with_for_update()
+
+        result = await self._session.execute(select_stmt)
+        record = result.scalar_one_or_none()
+        if record is None:
+            raise OrderServiceError("未能加载幂等键记录。")
+
+        if record.scope != self.CREATE_SCOPE:
+            raise OrderConflictError("Idempotency key scope mismatch.")
+        if record.request_hash and record.request_hash != payload_hash:
+            raise OrderConflictError("Idempotency key reused with different payload.")
+
+        if not inserted_here and dialect_name == "sqlite" and record.response_snapshot is None:
+            waited = 0.0
+            interval = 0.02
+            max_wait = 5.0
+            while record.response_snapshot is None and waited < max_wait:
+                await asyncio.sleep(interval)
+                waited += interval
+                await self._session.refresh(record)
+            if record.response_snapshot is None:
+                raise OrderConflictError("Idempotency key is currently being processed.")
+
+        record.scope = self.CREATE_SCOPE
+        if record.request_hash is None:
+            record.request_hash = payload_hash
+        record.expire_at = expires_at
+
+        if record.response_snapshot is not None:
+            return record, record.response_snapshot
         return record, None
 
     async def _validate_guest_session(self, guest_session_id: str) -> None:

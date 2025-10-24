@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -301,6 +302,88 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         )
         assert len(coupon_tx) == 2
         assert enqueue_spy  # 多次通知可触发多次入队,至少保证有入队行为
+
+
+@pytest.mark.asyncio
+async def test_payment_notification_creates_single_print_job(
+    model_test_engine, monkeypatch, enqueue_spy
+) -> None:
+    session_factory = async_sessionmaker(model_test_engine, expire_on_commit=False)
+
+    async with session_factory() as setup_session:
+        async with setup_session.begin():
+            order = Order(
+                order_id=970,
+                order_number="PRINT-970",
+                total_price=Decimal("22.00"),
+                status="pending_payment",
+                order_type="pickup",
+            )
+            setup_session.add(order)
+            setup_session.add(
+                OrderItem(
+                    item_id=9701,
+                    order_id=order.order_id,
+                    product_id=None,
+                    product_name="并发打印测试",
+                    quantity=1,
+                    unit_price=Decimal("22.00"),
+                )
+            )
+            order_id = order.order_id
+            order_number = order.order_number
+
+    async def noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
+
+    payload = WechatPaymentNotifySchema(
+        event_id="evt_print_race",
+        order_number=order_number,
+        transaction_id="txn-print-race",
+        amount=22.0,
+        currency="CNY",
+        channel="wechat_jsapi",
+        status="SUCCESS",
+        paid_at=datetime.now(tz=UTC),
+    )
+    raw_body = payload.model_dump_json().encode("utf-8")
+
+    async def process_once():
+        async with session_factory() as session:
+            service = PaymentService(session, get_settings())
+            return await service.handle_wechat_notification(
+                payload,
+                raw_body=raw_body,
+                signature=_sign(raw_body),
+            )
+
+    results = await asyncio.gather(process_once(), process_once())
+    assert all(result["status"] == "SUCCESS" for result in results)
+
+    async with session_factory() as verify_session:
+        job_rows = list(
+            (
+                await verify_session.execute(
+                    select(PrintJob).where(PrintJob.order_id == order_id)
+                )
+            ).scalars()
+        )
+        assert len(job_rows) == 1
+        assert job_rows[0].status == "pending"
+
+        records = list(
+            (
+                await verify_session.execute(
+                    select(PaymentRecord).where(PaymentRecord.txn_id == "txn-print-race")
+                )
+            ).scalars()
+        )
+        assert len(records) == 1
+
+    assert enqueue_spy
+    assert len(set(enqueue_spy)) == 1
 
 
 @pytest.mark.asyncio

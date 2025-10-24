@@ -42,6 +42,7 @@ async def test_payment_notify_after_order_created_via_api(model_test_engine) -> 
         base_price=Decimal("12.00"),
         status="active",
         inventory_status="in_stock",
+        stock_quantity=50,
     )
     guest_session = IdempotencyKey(
         idempotency_key=guest_session_id,

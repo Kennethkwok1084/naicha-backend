@@ -30,6 +30,7 @@ async def test_reservation_flow_end_to_end(db_session) -> None:
             base_price=15,
             status="active",
             inventory_status="in_stock",
+            stock_quantity=10,
         )
         db_session.add_all([category, product])
 

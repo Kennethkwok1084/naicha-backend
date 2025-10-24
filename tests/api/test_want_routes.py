@@ -25,6 +25,7 @@ async def _seed_product(db_session) -> Product:
         base_price=Decimal("13.50"),
         status="active",
         inventory_status="sold_out",
+        stock_quantity=0,
     )
     db_session.add_all([category, product])
     await db_session.flush()

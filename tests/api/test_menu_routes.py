@@ -26,6 +26,7 @@ async def _prepare_basic_menu(db_session) -> Product:
         description="经典款",
         status="active",
         inventory_status="in_stock",
+        stock_quantity=80,
     )
     mapping = ProductCategory(product_id=1, category_id=1)
 

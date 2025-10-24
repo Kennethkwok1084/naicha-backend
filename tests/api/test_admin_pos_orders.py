@@ -23,6 +23,7 @@ async def _seed_menu(db_session) -> None:
         base_price=Decimal("18.00"),
         status="active",
         inventory_status="in_stock",
+        stock_quantity=100,
     )
     group = SpecGroup(group_id=9001, name="甜度", sort_order=1)
     option = SpecOption(
