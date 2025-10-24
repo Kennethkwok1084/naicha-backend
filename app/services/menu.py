@@ -3,13 +3,17 @@ from __future__ import annotations
 import copy
 import time
 from collections import defaultdict
+from threading import Lock
 from typing import Any
 
+import redis
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from structlog import get_logger
 
-from app.core.settings import Settings
+from app.core.settings import Settings, get_settings
 from app.metrics.menu import record_cache_hit, record_cache_miss
 from app.models.catalog import (
     Category,
@@ -19,11 +23,76 @@ from app.models.catalog import (
     SpecOption,
 )
 
-_MENU_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+logger = get_logger(__name__)
+
+_MENU_CACHE: dict[str, tuple[float, int | None, dict[str, Any]]] = {}
+
+_MENU_VERSION_KEY = "menu:version"
+_menu_version_lock = Lock()
+_menu_version_client: redis.Redis | None = None
+_menu_version_disabled = False
 
 
-def invalidate_menu_cache() -> None:
+def _disable_menu_version_tracking() -> None:
+    global _menu_version_disabled, _menu_version_client
+    _menu_version_disabled = True
+    _menu_version_client = None
+
+
+def _get_version_client(settings: Settings) -> redis.Redis | None:
+    global _menu_version_client
+    if _menu_version_disabled:
+        return None
+    client = _menu_version_client
+    if client is not None:
+        return client
+    with _menu_version_lock:
+        client = _menu_version_client
+        if client is not None:
+            return client
+        try:
+            client = redis.Redis.from_url(settings.celery_broker_url, decode_responses=True)
+        except Exception as exc:  # pragma: no cover - 初始化失败仅记录
+            logger.warning("menu.cache.version_client_init_failed", error=str(exc))
+            _disable_menu_version_tracking()
+            return None
+        _menu_version_client = client
+        return client
+
+
+def _read_remote_menu_version(settings: Settings) -> int | None:
+    client = _get_version_client(settings)
+    if client is None:
+        return None
+    try:
+        value = client.get(_MENU_VERSION_KEY)
+        if value is None:
+            client.set(_MENU_VERSION_KEY, "0", nx=True)
+            value = client.get(_MENU_VERSION_KEY)
+        if value is None:
+            return None
+        return int(value)
+    except (RedisError, ValueError) as exc:
+        logger.warning("menu.cache.version_read_failed", error=str(exc))
+        _disable_menu_version_tracking()
+        return None
+
+
+def _bump_remote_menu_version(settings: Settings) -> None:
+    client = _get_version_client(settings)
+    if client is None:
+        return
+    try:
+        client.incr(_MENU_VERSION_KEY)
+    except RedisError as exc:
+        logger.warning("menu.cache.version_bump_failed", error=str(exc))
+        _disable_menu_version_tracking()
+
+
+def invalidate_menu_cache(settings: Settings | None = None) -> None:
     _MENU_CACHE.clear()
+    active_settings = settings or get_settings()
+    _bump_remote_menu_version(active_settings)
 
 
 class MenuService:
@@ -32,6 +101,7 @@ class MenuService:
     def __init__(self, session: AsyncSession, settings: Settings):
         self._session = session
         self._settings = settings
+        self._remote_version_snapshot: int | None = None
 
     async def get_menu_payload(self) -> dict[str, Any]:
         cached = self._load_from_cache()
@@ -171,15 +241,30 @@ class MenuService:
         if not entry:
             record_cache_miss()
             return None
-        expires_at, payload = entry
+        expires_at, cached_version, payload = entry
         if expires_at < time.time():
             _MENU_CACHE.pop(self.CACHE_KEY, None)
             record_cache_miss()
             return None
+
+        remote_version = self._fetch_remote_version()
+        if remote_version is not None and cached_version != remote_version:
+            _MENU_CACHE.pop(self.CACHE_KEY, None)
+            record_cache_miss()
+            return None
+
         record_cache_hit()
         return payload
 
     def _store_to_cache(self, payload: dict[str, Any]) -> None:
         ttl = max(self._settings.menu_cache_ttl_seconds, 0)
         expires_at = time.time() + ttl
-        _MENU_CACHE[self.CACHE_KEY] = (expires_at, payload)
+        version = self._remote_version_snapshot
+        if version is None:
+            version = self._fetch_remote_version()
+        _MENU_CACHE[self.CACHE_KEY] = (expires_at, version, payload)
+
+    def _fetch_remote_version(self) -> int | None:
+        version = _read_remote_menu_version(self._settings)
+        self._remote_version_snapshot = version
+        return version

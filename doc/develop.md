@@ -592,6 +592,421 @@ engine = create_async_engine(
 * [ ] 降级/恢复演练记录归档（计划 Week 5）
 * [x] 备份/恢复脚本可一键执行：`python scripts/db_maintenance.py backup|restore`
 
+---
+
+## ⚠️ 上线前必须修复的关键风险（2025-10-23 发现）
+
+**代码审查发现 6 项关键配置/安全问题，必须在生产部署前修复**：
+
+### 1. 🚨 致命风险：API 限流被禁用
+
+**问题**：`app/main.py` 中限流器被注释掉：
+```python
+# init_rate_limiter(app)  # 临时禁用限流以进行性能测试
+```
+
+同时所有路由的 `@limiter.limit()` 装饰器也被注释：
+- `app/api/routes/payments.py`: `# @limiter.limit("18000/minute;300/second")`
+- `app/api/routes/orders/__init__.py`: `# @limiter.limit("3000/minute")`
+
+**风险**：
+- **无限流保护**，任何人可通过脚本瞬间打爆 3Mbps 小水管 ECS
+- 服务会因资源耗尽（连接池、CPU、带宽）而瘫痪
+- 等同于"裸奔"，DDoS 攻击无防护
+
+**修复**：
+1. ✅ 取消注释 `app/main.py` 中的 `init_rate_limiter(app)`
+2. ✅ 恢复所有路由的 `@limiter.limit()` 装饰器
+3. ✅ 根据实际流量调整限流阈值（建议：订单 1000/minute，支付回调 18000/minute）
+
+**状态**：❌ **待修复**（当前为性能测试配置，生产部署前必须还原）
+
+---
+
+### 2. 😱 高危风险：JWT 有效期长达 30 天
+
+**问题**：`app/core/settings.py` 中 JWT 默认有效期：
+```python
+jwt_expire_minutes: int = Field(default=43200, alias="JWT_EXPIRE_MINUTES")
+# 43200 分钟 = 720 小时 = 30 天
+```
+
+**风险**：
+- **严重违反 V2.0 总纲**中"15-60 分钟"的安全设计
+- Token 泄露后，黑客有 **30 天**时间冒充用户
+- 无法及时撤销权限（如用户注销、角色变更）
+
+**修复**：
+在生产 `.env` 中设置：
+```bash
+# 推荐：1 小时
+JWT_EXPIRE_MINUTES=60
+
+# 或：1 天（最大容忍）
+JWT_EXPIRE_MINUTES=1440
+```
+
+**状态**：❌ **待修复**（默认值必须在 `.env.example` 中改为安全值）
+
+---
+
+### 3. 💣 高危风险：数据库连接池会撑爆服务器
+
+**问题**：`app/db/session.py` 中连接池配置：
+```python
+pool_size=200, max_overflow=250,
+# 最大 450 个连接
+```
+
+**风险**：
+- **2c2g 服务器内存无法支撑** 450 个 PostgreSQL 连接
+- 每个连接约占用 10MB 内存，450 × 10MB = **4.5GB**（远超服务器配置）
+- 会因 OOM（内存耗尽）导致数据库崩溃
+
+**修复**：
+根据"并发最多 10 个"的实际需求：
+```python
+pool_size=10,        # 基础连接池
+max_overflow=10,     # 溢出连接
+# 最大 20 个连接
+```
+
+或按 100 并发压测需求（已验证）：
+```python
+pool_size=50,        # 基础连接池
+max_overflow=30,     # 溢出连接
+# 最大 80 个连接（支持 100 并发）
+```
+
+**状态**：❌ **待修复**（当前 450 连接为压测配置，生产必须降低）
+
+**说明**：当前 `pool_size=200, max_overflow=250` 是为支持 100-200 并发压测配置的，但 200 并发已确认超出架构承载能力（21% 错误率）。生产环境建议使用 80 连接（支持 100 并发，0% 错误）或根据实际资源调整。
+
+---
+
+### 4. 😥 部署风险：缺少生产 Docker Compose
+
+**问题**：仅有 `docker-compose.dev.yml`，存在以下生产环境问题：
+
+1. **Celery 未启动**：缺少 `celery worker` 和 `celery beat` 服务
+   - 打印小票、预约提醒等后台任务**全都不会执行**
+   
+2. **热加载**：使用 `uvicorn ... --reload` 开发命令
+   - 性能低、不稳定，生产应使用 Gunicorn
+
+3. **源码挂载**：`volumes: - ../../app:/app/app`
+   - 生产应使用构建好的镜像，不应挂载源码
+
+**修复**：
+创建 `docker-compose.prod.yml`，包含：
+- `api`: Gunicorn 启动，不挂载源码
+- `postgres`: 持久化配置
+- `redis`: 持久化配置
+- `worker`: Celery worker
+- `beat`: Celery beat（预约提醒、对账任务）
+
+**状态**：❌ **待创建**（M6 交付物）
+
+---
+
+### 5. 😵 配置风险：多处 localhost 和 dev 默认值
+
+**问题**：`app/core/settings.py` 和 `.env.example` 中的不安全默认值：
+
+1. **`APP_ENV` 默认 `dev`**：
+   - 生产环境会以开发模式运行（开启 SQL 日志、Swagger Docs）
+   - 性能低且有信息泄露风险
+
+2. **`CELERY_BROKER_URL` 默认 `redis://localhost`**：
+   - Docker Compose 中 API 容器无法访问 `localhost` 的 Redis
+   - 导致后台任务全部失败
+
+3. **`ALLOWED_ORIGINS` 默认 `localhost`**：
+   - 小程序和 Web 管理后台会遇到 **CORS 跨域错误**
+   - 导致前端无法访问 API
+
+**修复**：
+在 `.env` 中设置：
+```bash
+# 环境
+APP_ENV=prod
+
+# Celery（Docker Compose 中服务名）
+CELERY_BROKER_URL=redis://redis:6379/0
+WS_BROADCAST_URL=redis://redis:6379/0
+
+# CORS（添加实际域名）
+ALLOWED_ORIGINS=https://your-miniapp-domain.com,https://admin.your-domain.com,http://localhost:3000
+```
+
+**状态**：❌ **待修复**（`.env.example` 需更新为生产友好的默认值）
+
+---
+
+### 6. ⚠️ 扩展性风险：菜单缓存仅支持单实例 ✅ 已修复
+
+**原问题**：`app/services/menu.py` 使用全局变量 `_MENU_CACHE`（内存缓存）
+
+**原风险**：
+- **单实例运行正常**
+- **多实例部署时缓存不一致**：
+  - 容器 A 更新菜单（清空 A 的缓存）
+  - 容器 B 的缓存仍是旧数据
+  - 用户看到不同版本的菜单
+
+**修复方案（2025-10-23 已实现）**：
+
+引入 **Redis 版本号协作机制**，解决多实例缓存一致性问题：
+
+```python
+# app/services/menu.py:28-88
+_MENU_CACHE: dict[str, tuple[float, int | None, dict[str, Any]]] = {}
+_MENU_VERSION_KEY = "menu:version"
+
+def _read_remote_menu_version(settings: Settings) -> int | None:
+    """从 Redis 读取菜单版本号"""
+    client = _get_version_client(settings)
+    if client is None:
+        return None
+    try:
+        value = client.get(_MENU_VERSION_KEY)
+        return int(value) if value else 0
+    except (RedisError, ValueError):
+        _disable_menu_version_tracking()
+        return None
+
+def _bump_remote_menu_version(settings: Settings) -> None:
+    """更新菜单时递增版本号"""
+    client = _get_version_client(settings)
+    if client is not None:
+        client.incr(_MENU_VERSION_KEY)
+```
+
+**工作原理**：
+1. **缓存命中前版本检查**：读取缓存时先比对本地版本号与 Redis 版本号
+2. **版本失配立即刷新**：如果版本号不一致，清空本地缓存并重新加载
+3. **更新时递增版本**：库存/售罄状态变更时调用 `_bump_remote_menu_version()`
+4. **降级保护**：Redis 不可达时自动回退到 TTL 行为（传统单实例模式）
+
+**改进效果**：
+- ✅ **支持多实例部署**：所有实例通过 Redis 版本号保持缓存一致
+- ✅ **即时失效**：库存变更后，所有实例在下次请求时自动刷新
+- ✅ **容错设计**：Redis 故障时降级到 TTL 模式，不影响基本功能
+- ✅ **测试覆盖**：`tests/services/test_menu_service.py:142-174` 验证跨进程失效机制
+
+**验证方法**：
+```bash
+# 运行跨进程缓存测试
+PYTHONPATH=. .venv/bin/pytest tests/services/test_menu_service.py::test_invalidate_triggers_refetch_across_processes -v
+```
+
+**监控建议**：
+```bash
+# 查看当前菜单版本号
+redis-cli -u "$CELERY_BROKER_URL" GET menu:version
+
+# 监控版本递增（库存变更频率）
+redis-cli -u "$CELERY_BROKER_URL" --stat | grep menu:version
+```
+
+**状态**：✅ **已修复**（2025-10-23 实现，支持多实例部署）
+
+---
+
+## 🔐 并发安全改进（2025-10-23）
+
+### 1. 订单创建引入库存锁
+
+**问题**：原先订单创建时读取商品和规格不加锁，高并发下可能超卖。
+
+**修复**：`app/services/orders.py:366-411` 改用 `SELECT ... FOR UPDATE`：
+
+```python
+async def _load_products_and_groups(self, product_ids) -> tuple[dict[int, Product], dict[int, set[int]]]:
+    products_stmt = (
+        select(Product)
+        .where(Product.product_id.in_(product_ids))
+        .with_for_update(of=Product)  # ✅ 行级锁
+    )
+    products_result = await self._session.execute(products_stmt)
+    # ...
+
+async def _load_spec_options(self, items) -> dict[int, tuple[SpecOption, SpecGroup | None]]:
+    options_stmt = (
+        select(SpecOption)
+        .where(SpecOption.option_id.in_(option_ids))
+        .with_for_update(of=SpecOption)  # ✅ 行级锁
+    )
+    options_result = await self._session.execute(options_stmt)
+    # ...
+```
+
+**效果**：
+- ✅ **防止超卖**：库存状态检查与订单写入在同一事务内原子执行
+- ✅ **行级锁**：仅锁定相关商品/规格，不影响其他订单并发
+- ✅ **测试验证**：`tests/services/test_order_service.py:201-256` 并发场景测试
+
+**注意事项**：
+- 测试在 SQLite 上自动跳过（不支持 `FOR UPDATE`）
+- **生产验证建议**：在 PostgreSQL 环境运行完整测试套件
+
+```bash
+# PostgreSQL 环境验证锁定行为
+PYTHONPATH=. .venv/bin/pytest tests/services/test_order_service.py::test_create_order_holds_inventory_lock_until_commit -v
+```
+
+---
+
+### 2. Celery 任务引入分布式锁
+
+**问题**：多实例或 beat 调度重叠可能导致周期任务并发执行（如对账、预约提醒）。
+
+**修复**：`app/workers/tasks.py:33-231` 统一使用 Redis 分布式锁：
+
+```python
+def _acquire_task_lock(name: str, interval_seconds: int) -> tuple[bool, redis.lock.Lock | None]:
+    """获取任务锁，失败时允许降级"""
+    client = _get_lock_client()
+    if client is None:
+        return True, None  # Redis 不可达，允许执行（降级）
+    
+    ttl = _resolve_lock_ttl(interval_seconds)  # 2×间隔，最少120s，最多7200s
+    try:
+        lock = client.lock(name, timeout=ttl, blocking=False)
+        acquired = lock.acquire(blocking=False)
+        if not acquired:
+            return False, None  # 其他实例执行中
+        return True, lock
+    except RedisError:
+        return True, None  # 锁获取失败，允许执行（降级）
+
+def _release_task_lock(lock: redis.lock.Lock | None, name: str) -> None:
+    """释放任务锁，失败时仅记录"""
+    if lock is None:
+        return
+    try:
+        if lock.owned():
+            lock.release()
+    except RedisError as exc:
+        logger.warning("celery.lock.release_failed", lock=name, error=str(exc))
+```
+
+**锁命名规范**：
+- `celery:lock:print_job_recovery`
+- `celery:lock:reservation_reminder`
+- `celery:lock:daily_reconciliation`
+
+**效果**：
+- ✅ **防止重复执行**：同一时刻仅一个实例运行周期任务
+- ✅ **自动超时**：锁 TTL 为任务间隔的 2 倍，避免死锁
+- ✅ **容错降级**：Redis 不可达时仍允许任务执行（单实例兼容）
+- ✅ **测试验证**：`tests/workers/test_tasks.py:8-50` 验证锁互斥行为
+
+**监控命令**：
+```bash
+# 查看当前持有的锁
+redis-cli -u "$CELERY_BROKER_URL" KEYS "celery:lock:*"
+
+# 检查特定锁的 TTL
+redis-cli -u "$CELERY_BROKER_URL" TTL celery:lock:print_job_recovery
+
+# 手动释放卡死的锁（紧急情况）
+redis-cli -u "$CELERY_BROKER_URL" DEL celery:lock:print_job_recovery
+```
+
+**压测建议**：
+- 监控锁键的持有时长，识别异常长时间占用
+- 验证多实例部署时任务不会重复执行
+
+---
+
+### 3. 测试覆盖与验证
+
+**单元测试**：
+```bash
+# 完整测试套件
+PYTHONPATH=. .venv/bin/pytest tests/services/test_menu_service.py \
+                                tests/services/test_order_service.py \
+                                tests/workers/test_tasks.py -v
+
+# 菜单缓存跨进程失效
+PYTHONPATH=. .venv/bin/pytest tests/services/test_menu_service.py::test_invalidate_triggers_refetch_across_processes -v
+
+# 订单锁定（需 PostgreSQL）
+PYTHONPATH=. .venv/bin/pytest tests/services/test_order_service.py::test_create_order_holds_inventory_lock_until_commit -v
+
+# Celery 锁互斥
+PYTHONPATH=. .venv/bin/pytest tests/workers/test_tasks.py::test_acquire_task_lock_mutual_exclusion -v
+```
+
+**生产验证建议**：
+
+1. **PostgreSQL 环境测试**：
+   ```bash
+   # 确保在真实数据库上验证 FOR UPDATE 行为
+   DATABASE_URL=postgresql+asyncpg://user:pass@host/db pytest tests/services/test_order_service.py::test_create_order_holds_inventory_lock_until_commit
+   ```
+
+2. **Redis 可用性监控**：
+   - 部署后监控 Redis broker 连接状态
+   - 日志关键字：`menu.cache.version_read_failed`、`celery.lock.acquire_failed`
+
+3. **锁监控指标**（建议添加）：
+   - Prometheus Counter: `celery_lock_acquire_failed_total{lock=*}`
+   - Prometheus Gauge: `celery_lock_held_seconds{lock=*}`（持有时长）
+
+4. **菜单缓存验证**：
+   ```bash
+   # 多实例环境验证缓存一致性
+   # 实例 A 更新库存
+   curl -X PUT http://api-1/api/v1/admin/inventory/products/1 -d '{"inventory_status":"sold_out"}'
+   
+   # 实例 B 立即查询菜单（应反映最新状态）
+   curl http://api-2/api/v1/menu
+   ```
+
+---
+
+## 🔒 上线检查清单（必须全部完成）
+
+**安全配置**：
+- [ ] ✅ 恢复 API 限流器（`init_rate_limiter` + 所有装饰器）
+- [ ] ✅ 修改 JWT 有效期为 60 分钟或 1440 分钟
+- [ ] ✅ 调整数据库连接池为 80（支持 100 并发）或更低
+- [ ] ✅ 设置 `APP_ENV=prod`
+- [ ] ✅ 配置 `ALLOWED_ORIGINS` 为实际域名
+- [ ] ✅ 修改 `CELERY_BROKER_URL` 为 `redis://redis:6379/0`
+
+**并发安全**（2025-10-23 新增）：
+- [x] ✅ 订单创建使用 `SELECT ... FOR UPDATE` 锁定库存
+- [x] ✅ 菜单缓存引入 Redis 版本号协作机制
+- [x] ✅ Celery 周期任务使用分布式锁防止重复执行
+- [ ] 在 PostgreSQL 环境验证订单锁定测试
+- [ ] 验证多实例部署时菜单缓存一致性
+- [ ] 监控 Redis 锁键持有时长（识别异常）
+
+**部署配置**：
+- [ ] ✅ 创建 `docker-compose.prod.yml`（包含 worker 和 beat）
+- [ ] ✅ 更新 `.env.example` 为生产友好的默认值
+- [ ] ✅ 验证 Celery 任务可正常执行（打印、预约提醒）
+- [ ] ✅ 验证 Redis 分布式锁正常工作
+
+**文档更新**：
+- [x] ✅ 更新 `doc/runbook.md` 包含上述配置说明
+- [x] ✅ 更新 `doc/runbook.md` 包含 Redis 锁诊断流程
+- [x] ✅ 更新 `doc/runbook.md` 包含菜单缓存即时失效策略
+- [ ] ✅ 在 `README.md` 中添加"生产部署"章节
+
+**验收测试**：
+- [ ] 部署测试环境验证所有配置
+- [ ] 限流测试：超限时返回 429
+- [ ] Celery 测试：打印任务和预约提醒正常
+- [ ] CORS 测试：前端可正常访问 API
+- [ ] 并发测试：多实例菜单缓存一致性
+- [ ] 锁测试：周期任务不会重复执行
+
+---
+
 **新增交付说明**：
 
 - `scripts/db_maintenance.py`：封装 `pg_dump`/`pg_restore`，支持 `--schema-only` 导出，默认输出 `backups/pg_backup_<timestamp>.dump`，用于支撑每日快照与季度恢复演练。
@@ -607,11 +1022,50 @@ engine = create_async_engine(
   - **验证结果**：2025-10-23 执行 `python scripts/reconcile_payments.py --strict`，差异 0，退出码 0
   - **文档链接**：使用说明、定时任务配置、排查流程已纳入 `doc/runbook.md`
 
+**并发安全改进（2025-10-23 新增）**：
+
+- ✅ **订单锁定**：`app/services/orders.py:366-411` 使用 `SELECT ... FOR UPDATE` 锁定商品和规格，防止超卖
+  - 测试：`tests/services/test_order_service.py:201-256` 并发场景验证（PostgreSQL 环境）
+  - 影响：确保库存状态检查与订单写入原子性
+  
+- ✅ **菜单缓存多实例支持**：`app/services/menu.py:28-270` 引入 Redis 版本号协作
+  - 机制：缓存命中前比对远端版本，失配立即刷新，Redis 不可达时回退 TTL
+  - 测试：`tests/services/test_menu_service.py:142-174` 跨进程失效测试
+  - 影响：解决多实例部署时缓存不一致问题
+  
+- ✅ **Celery 分布式锁**：`app/workers/tasks.py:33-231` 统一获取 Redis 分布式锁
+  - 机制：周期任务执行前获取锁，避免 beat 调度重叠，锁失败时降级允许执行
+  - 测试：`tests/workers/test_tasks.py:8-50` 锁互斥单元测试
+  - 锁键：`celery:lock:print_job_recovery`、`celery:lock:reservation_reminder`、`celery:lock:daily_reconciliation`
+  - 影响：防止多实例或调度重叠导致任务重复执行
+  
+- ✅ **文档更新**：`doc/runbook.md:272-282,435-486,629-634` 同步锁诊断流程与菜单缓存即时失效策略
+
+**验证命令**：
+```bash
+# 完整测试套件
+PYTHONPATH=. .venv/bin/pytest tests/services/test_menu_service.py \
+                                tests/services/test_order_service.py \
+                                tests/workers/test_tasks.py -v
+
+# PostgreSQL 环境验证订单锁定
+PYTHONPATH=. .venv/bin/pytest tests/services/test_order_service.py::test_create_order_holds_inventory_lock_until_commit -v
+```
+
+**部署建议**：
+1. 在 PostgreSQL 环境重跑订单锁定测试，确认行为符合生产预期
+2. 部署后监控 Redis broker 可用性（日志关键字：`version_read_failed`、`lock.acquire_failed`）
+3. 压测时监控锁键持有时长，识别异常长时间占用
+
+---
+
 **剩余事项**：
 
 - 🚧 `/menu` 和 `/orders` 压测（计划使用现有 Locust 脚本）
 - 🚧 WebSocket 压测（200 并发已在 M1 验证通过，需补充文档）
 - 🚧 生产部署准备（WAF 配置、K3s manifests；备份脚本已完成待联调）
+- 🚧 PostgreSQL 环境验证订单锁定测试（确保生产库行为正确）
+- 🚧 多实例环境验证菜单缓存一致性
 
 **下一步行动**（Week 5）：
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -21,6 +22,7 @@ from app.services.orders import (
     OrderService,
     OrderValidationError,
 )
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_menu(db_session):
@@ -193,3 +195,62 @@ async def test_create_reservation_order_success(db_session) -> None:
     scheduled_utc = datetime.fromisoformat(result["scheduled_at"])
     assert scheduled_utc.tzinfo is not None
     assert scheduled_utc > datetime.now(tz=UTC)
+
+
+@pytest.mark.asyncio
+async def test_create_order_holds_inventory_lock_until_commit(db_session) -> None:
+    if db_session.bind.dialect.name == "sqlite":
+        pytest.skip("SQLite 不支持行级锁,跳过该验证。")
+
+    await _seed_menu(db_session)
+
+    user = User(user_id=99, open_id="lock-user")
+    db_session.add(user)
+    await db_session.flush()
+
+    settings = get_settings()
+    service = OrderService(db_session, settings)
+
+    payload = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        order_type="pickup",
+    )
+
+    ready_event = asyncio.Event()
+    release_event = asyncio.Event()
+
+    async def post_create(order, items):
+        ready_event.set()
+        await release_event.wait()
+
+    order_task = asyncio.create_task(
+        service.create_order(
+            payload=payload,
+            idempotency_key="idem-lock",
+            user=user,
+            post_create=post_create,
+        )
+    )
+
+    await asyncio.wait_for(ready_event.wait(), timeout=1.0)
+
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def update_inventory():
+        async with session_factory() as other_session:
+            async with other_session.begin():
+                product = await other_session.get(Product, 1)
+                product.inventory_status = "sold_out"
+                await other_session.flush()
+
+    update_task = asyncio.create_task(update_inventory())
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(asyncio.shield(update_task), timeout=0.1)
+
+    release_event.set()
+
+    order_result = await asyncio.wait_for(order_task, timeout=1.0)
+    assert order_result["order_id"] > 0
+
+    await asyncio.wait_for(update_task, timeout=1.0)

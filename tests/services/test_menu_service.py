@@ -14,6 +14,7 @@ from app.models.catalog import (
     SpecGroup,
     SpecOption,
 )
+from app.services import menu as menu_module
 from app.services.menu import _MENU_CACHE, MenuService, invalidate_menu_cache
 
 
@@ -111,12 +112,12 @@ async def test_menu_service_cache_expires(db_session) -> None:
     service = MenuService(db_session, settings)
 
     # 预先写入过期缓存,触发过期清理分支
-    _MENU_CACHE[MenuService.CACHE_KEY] = (time.time() - 1, {"stale": True})
+    _MENU_CACHE[MenuService.CACHE_KEY] = (time.time() - 1, 0, {"stale": True})
     payload = await service.get_menu_payload()
 
     assert payload["categories"]
     assert MenuService.CACHE_KEY in _MENU_CACHE
-    assert _MENU_CACHE[MenuService.CACHE_KEY][1] == payload
+    assert _MENU_CACHE[MenuService.CACHE_KEY][2] == payload
 
 
 def test_catalog_events_trigger_cache_invalidation(monkeypatch) -> None:
@@ -136,3 +137,38 @@ def test_catalog_events_trigger_cache_invalidation(monkeypatch) -> None:
     calls.clear()
     catalog_module._spec_option_inventory_status_change(option, "sold_out", "in_stock", None)
     assert calls == ["invalidate"]
+
+
+@pytest.mark.asyncio
+async def test_menu_cache_invalidates_when_remote_version_changes(monkeypatch, db_session) -> None:
+    menu_module._menu_version_disabled = False
+    menu_module._menu_version_client = None
+    menu_module._MENU_CACHE.clear()
+
+    version_state = {"value": 0}
+
+    def fake_read(settings):
+        return version_state["value"]
+
+    def fake_bump(settings):
+        version_state["value"] += 1
+
+    monkeypatch.setattr(menu_module, "_read_remote_menu_version", fake_read)
+    monkeypatch.setattr(menu_module, "_bump_remote_menu_version", fake_bump)
+
+    invalidate_menu_cache()
+    await _seed_basic_menu(db_session)
+
+    settings = get_settings().model_copy()
+    service = MenuService(db_session, settings)
+
+    first_payload = await service.get_menu_payload()
+    assert first_payload["categories"]
+
+    cached = await service.get_menu_payload()
+    assert cached is first_payload
+
+    version_state["value"] += 1
+
+    refreshed = await service.get_menu_payload()
+    assert refreshed is not first_payload

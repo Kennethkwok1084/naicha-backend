@@ -363,21 +363,24 @@ class OrderService:
         if not product_ids:
             return {}, {}
 
-        stmt = (
-            select(Product, ProductSpecMapping.group_id)
-            .outerjoin(
-                ProductSpecMapping,
-                ProductSpecMapping.product_id == Product.product_id,
-            )
+        products_stmt = (
+            select(Product)
             .where(Product.product_id.in_(product_ids))
+            .with_for_update(of=Product)
         )
-        result = await self._session.execute(stmt)
-        products: dict[int, Product] = {}
+        products_result = await self._session.execute(products_stmt)
+        products_list = list(products_result.scalars().all())
+
+        products: dict[int, Product] = {product.product_id: product for product in products_list}
         product_groups: dict[int, set[int]] = {}
-        for product, group_id in result:
-            products.setdefault(product.product_id, product)
-            if group_id is not None:
-                product_groups.setdefault(product.product_id, set()).add(group_id)
+
+        if products:
+            mappings_stmt = select(ProductSpecMapping).where(
+                ProductSpecMapping.product_id.in_(product_ids)
+            )
+            mappings_result = await self._session.execute(mappings_stmt)
+            for mapping in mappings_result.scalars().all():
+                product_groups.setdefault(mapping.product_id, set()).add(mapping.group_id)
         return products, product_groups
 
     async def _load_spec_options(self, items) -> dict[int, tuple[SpecOption, SpecGroup | None]]:
@@ -386,14 +389,26 @@ class OrderService:
             return {}
 
         options_stmt = (
-            select(SpecOption, SpecGroup)
-            .outerjoin(SpecGroup, SpecGroup.group_id == SpecOption.group_id)
+            select(SpecOption)
             .where(SpecOption.option_id.in_(option_ids))
+            .with_for_update(of=SpecOption)
         )
         options_result = await self._session.execute(options_stmt)
+        options_list = list(options_result.scalars().all())
+
         lookup: dict[int, tuple[SpecOption, SpecGroup | None]] = {}
-        for option, group in options_result:
-            lookup[option.option_id] = (option, group)
+        if not options_list:
+            return lookup
+
+        group_ids = {option.group_id for option in options_list if option.group_id is not None}
+        groups: dict[int, SpecGroup] = {}
+        if group_ids:
+            groups_stmt = select(SpecGroup).where(SpecGroup.group_id.in_(group_ids))
+            groups_result = await self._session.execute(groups_stmt)
+            groups = {group.group_id: group for group in groups_result.scalars().all()}
+
+        for option in options_list:
+            lookup[option.option_id] = (option, groups.get(option.group_id))
         return lookup
 
     async def _build_order_entity(
