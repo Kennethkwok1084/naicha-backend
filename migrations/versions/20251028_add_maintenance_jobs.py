@@ -1,7 +1,7 @@
 """add maintenance job tables
 
 Revision ID: 20251028_add_maintenance_jobs
-Revises: 20251024_add_product_stock_quantity
+Revises: 20251024_0002
 Create Date: 2025-10-28 10:00:00.000000
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "20251028_add_maintenance_jobs"
-down_revision = "20251024_add_product_stock_quantity"
+down_revision = "20251024_0002"
 branch_labels = None
 depends_on = None
 

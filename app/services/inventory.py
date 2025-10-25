@@ -8,6 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
+from app.metrics.inventory import (
+    INVENTORY_CURRENT_STOCK,
+    INVENTORY_DEDUCTION_TOTAL,
+)
 from app.models.accounts import Admin
 from app.models.catalog import Product, SpecOption
 from app.models.orders import AuditLog, OrderItem
@@ -138,6 +142,10 @@ class InventoryService:
             if product.stock_quantity > 0 and product.inventory_status == "sold_out":
                 product.inventory_status = "in_stock"
             product.updated_at = now
+            INVENTORY_DEDUCTION_TOTAL.labels(result="restored").inc()
+            INVENTORY_CURRENT_STOCK.labels(product_id=str(product.product_id)).set(
+                int(product.stock_quantity)
+            )
             changes.append(
                 {
                     "product_id": product.product_id,

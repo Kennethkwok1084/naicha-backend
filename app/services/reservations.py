@@ -11,6 +11,7 @@ from structlog import get_logger
 
 from app.core.settings import Settings
 from app.models.orders import Order
+from app.models.reservations import ReservationSlot
 from app.services.shop import ShopService
 
 logger = get_logger(__name__)
@@ -19,6 +20,9 @@ logger = get_logger(__name__)
 @dataclass(slots=True)
 class ReservationPlan:
     scheduled_at_utc: datetime
+    slot_id: int
+    slot_start_utc: datetime
+    slot_end_utc: datetime
 
 
 class ReservationError(Exception):
@@ -68,7 +72,19 @@ class ReservationService:
                 f"预约时间需至少提前 {lead_minutes} 分钟。"
             )
 
-        return ReservationPlan(scheduled_at_utc=local_target.astimezone(UTC))
+        slot_minutes = max(self._settings.reservation_slot_granularity_minutes, 5)
+        slot_start_local = self._floor_to_slot(local_target, slot_minutes)
+        slot_end_local = slot_start_local + timedelta(minutes=slot_minutes)
+        slot_start_utc = slot_start_local.astimezone(UTC)
+        slot_end_utc = slot_end_local.astimezone(UTC)
+        slot = await self._reserve_slot(slot_start_utc, slot_end_utc)
+
+        return ReservationPlan(
+            scheduled_at_utc=local_target.astimezone(UTC),
+            slot_id=slot.slot_id,
+            slot_start_utc=slot.slot_start,
+            slot_end_utc=slot.slot_end,
+        )
 
     async def send_due_reminders(self, now: datetime) -> list[int]:
         """查找需要发送提醒的预约订单并标记发送时间。"""
@@ -148,6 +164,66 @@ class ReservationService:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def release_slot(self, slot_id: int | None) -> None:
+        if not slot_id:
+            return
+
+        stmt = select(ReservationSlot).where(ReservationSlot.slot_id == slot_id)
+        if self._dialect_name() != "sqlite":
+            stmt = stmt.with_for_update()
+
+        result = await self._session.execute(stmt)
+        slot = result.scalar_one_or_none()
+        if slot is None:
+            return
+
+        if slot.reserved_count <= 0:
+            slot.reserved_count = 0
+            slot.updated_at = datetime.now(tz=UTC)
+            await self._session.flush()
+            return
+
+        slot.reserved_count -= 1
+        slot.updated_at = datetime.now(tz=UTC)
+        await self._session.flush()
+
+    async def _reserve_slot(
+        self,
+        slot_start_utc: datetime,
+        slot_end_utc: datetime,
+    ) -> ReservationSlot:
+        stmt = select(ReservationSlot).where(ReservationSlot.slot_start == slot_start_utc)
+        if self._dialect_name() != "sqlite":
+            stmt = stmt.with_for_update()
+
+        result = await self._session.execute(stmt)
+        slot = result.scalar_one_or_none()
+        if slot is None:
+            slot = ReservationSlot(
+                slot_start=slot_start_utc,
+                slot_end=slot_end_utc,
+                capacity=max(self._settings.reservation_slot_capacity, 1),
+                reserved_count=0,
+            )
+            self._session.add(slot)
+            await self._session.flush()
+        else:
+            slot.slot_end = slot_end_utc
+
+        if slot.reserved_count >= slot.capacity:
+            raise ReservationValidationError("该预约时间段已满,请选择其他时间。")
+
+        slot.reserved_count += 1
+        slot.updated_at = datetime.now(tz=UTC)
+        await self._session.flush()
+        return slot
+
+    def _dialect_name(self) -> str:
+        bind = self._session.get_bind()
+        if bind is None or not bind.dialect:
+            return ""
+        return getattr(bind.dialect, "name", "")
+
     @staticmethod
     def _within_open_hours(target: datetime, open_hours: Iterable[dict]) -> bool:
         weekday = target.isoweekday()
@@ -218,6 +294,12 @@ class ReservationService:
                 ranges.append((start, end))
         ranges.sort()
         return ranges
+
+    @staticmethod
+    def _floor_to_slot(target: datetime, slot_minutes: int) -> datetime:
+        slot_minutes = max(slot_minutes, 1)
+        minute = (target.minute // slot_minutes) * slot_minutes
+        return target.replace(minute=minute, second=0, microsecond=0)
 
     @staticmethod
     def _parse_time(value: object) -> time | None:

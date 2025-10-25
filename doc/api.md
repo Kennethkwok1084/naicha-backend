@@ -416,18 +416,23 @@
 }
 ```
 - **错误码**：
-  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架
+  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架 / 预约档期已满
   - 422 预约时间不合法（非当日/未在营业时间/未带时区）
   - 403 游客会话不匹配目标订单
   - 409 Idempotency-Key 与历史请求不一致
+- **预约容量**：默认以 `RESERVATION_SLOT_GRANULARITY_MINUTES=15` 分钟为档期粒度，且每个档期至多 `RESERVATION_SLOT_CAPACITY=10` 单（可通过环境变量调优）
 - **副作用**：写库 `orders`、`order_items`、`idempotency_keys`
 - **审计记录**：暂不写入
-- **观测指标**：待补（计划 `order_create_total`, `order_create_fail_total`）
+- **观测指标**：
+  - `order_create_total{result=success|service_error|unexpected_error}`
+  - `inventory_deduction_total{result=success|insufficient|restored}`
+  - `inventory_current_stock{product_id}`
+  - `inventory_oversell_total{product_id}`
 - **测试清单**：
   - [x] 正常流
   - [x] 参数校验（游客无 session、规格越权）
   - [ ] 权限校验
-  - [ ] 幂等 / 并发
+  - [x] 幂等 / 并发
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-17：首次发布
@@ -575,7 +580,11 @@
   - 409 Payment amount mismatches order total. —— 支付金额与订单不一致
 - **副作用**：写库 `payment_records`、`orders.status=paid`、补写 `print_jobs`、触发商户 WS 推送、累计会员积分（满 10 自动发放 `free_any_drink` 券）
 - **审计记录**：暂不写入
-- **观测指标**：待补（计划 `payment_callback_total`、`payment_callback_fail_total`、`payment_callback_latency_ms`）
+- **观测指标**：
+  - `payment_callback_total{result=success|order_not_found|conflict|unexpected_error}`
+  - `payment_callback_latency_ms`
+  - `print_job_total{result=success|missing|retry_scheduled|non_retryable_failure|retry_limit}`
+  - `print_job_retry_count`
 - **测试清单**：
   - [x] 正常流
   - [x] 参数校验（签名、金额不一致）
@@ -648,6 +657,8 @@
 - **观测指标**：
   - `admin_order_created_total{channel=...,result=success|error}`
   - `admin_order_create_latency_ms{channel=...}`
+  - `print_job_total{result=success|retry_scheduled|non_retryable_failure}`
+  - `print_job_recovery_total{result=recovered|empty}`
 - **测试清单**：
   - [x] 正常流（cash/wechat）
   - [x] 幂等复用

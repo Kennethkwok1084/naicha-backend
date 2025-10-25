@@ -50,6 +50,10 @@ class Order(Base, TimestampMixin):
     reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    reservation_slot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reservation_slots.slot_id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(

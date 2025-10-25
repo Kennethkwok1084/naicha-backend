@@ -11,6 +11,7 @@ from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import IdempotencyKey, Order
+from app.models.reservations import ReservationSlot
 from app.models.shop import ShopProfile
 from app.schemas import (
     OrderCreateRequestSchema,
@@ -281,6 +282,123 @@ async def test_create_reservation_order_success(db_session) -> None:
     scheduled_utc = datetime.fromisoformat(result["scheduled_at"])
     assert scheduled_utc.tzinfo is not None
     assert scheduled_utc > datetime.now(tz=UTC)
+    order = await db_session.get(Order, result["order_id"])
+    assert order is not None
+    assert order.reservation_slot_id is not None
+    slot = await db_session.get(ReservationSlot, order.reservation_slot_id)
+    assert slot is not None
+    assert slot.reserved_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reservation_slot_capacity_enforced(db_session) -> None:
+    await _seed_menu(db_session)
+    profile = ShopProfile(
+        id=1,
+        timezone="Asia/Shanghai",
+        open_hours_json=[
+            {
+                "weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(),
+                "ranges": [["08:00", "22:00"]],
+            }
+        ],
+    )
+    db_session.add(profile)
+    user = User(user_id=77, open_id="reservation-cap")
+    db_session.add(user)
+    await db_session.flush()
+
+    settings = get_settings()
+    original_flag = settings.reservation_enabled
+    original_capacity = settings.reservation_slot_capacity
+    try:
+        settings.reservation_enabled = True
+        settings.reservation_slot_capacity = 1
+        service = OrderService(db_session, settings)
+        scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=3)
+        payload = OrderCreateRequestSchema(
+            items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+            order_type="pickup",
+            scheduled_at=scheduled_local,
+        )
+
+        await service.create_order(
+            payload=payload,
+            idempotency_key="idem-slot-1",
+            user=user,
+        )
+
+        with pytest.raises(OrderValidationError):
+            await service.create_order(
+                payload=payload,
+                idempotency_key="idem-slot-2",
+                user=user,
+            )
+    finally:
+        settings.reservation_enabled = original_flag
+        settings.reservation_slot_capacity = original_capacity
+
+
+@pytest.mark.asyncio
+async def test_cancel_reservation_releases_slot(db_session) -> None:
+    await _seed_menu(db_session)
+    profile = ShopProfile(
+        id=1,
+        timezone="Asia/Shanghai",
+        open_hours_json=[
+            {
+                "weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(),
+                "ranges": [["08:00", "22:00"]],
+            }
+        ],
+    )
+    db_session.add(profile)
+    user = User(user_id=88, open_id="reservation-cancel")
+    db_session.add(user)
+    await db_session.flush()
+
+    settings = get_settings()
+    original_flag = settings.reservation_enabled
+    original_capacity = settings.reservation_slot_capacity
+    try:
+        settings.reservation_enabled = True
+        settings.reservation_slot_capacity = 1
+        service = OrderService(db_session, settings)
+        scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=4)
+        payload = OrderCreateRequestSchema(
+            items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+            order_type="pickup",
+            scheduled_at=scheduled_local,
+        )
+
+        created = await service.create_order(
+            payload=payload,
+            idempotency_key="idem-slot-cancel",
+            user=user,
+        )
+        order_row = await db_session.get(Order, created["order_id"])
+        assert order_row is not None and order_row.reservation_slot_id is not None
+        slot_id = order_row.reservation_slot_id
+
+        cancelled = await service.cancel_pending_order(order_row.order_id, reason="test.manual")
+        assert cancelled is True
+        await db_session.refresh(order_row)
+        assert order_row.status == "cancelled"
+        assert order_row.reservation_slot_id is None
+
+        slot = await db_session.get(ReservationSlot, slot_id)
+        assert slot is not None
+        assert slot.reserved_count == 0
+
+        second = await service.create_order(
+            payload=payload,
+            idempotency_key="idem-slot-cancel-2",
+            user=user,
+        )
+        assert second["order_id"] != created["order_id"]
+    finally:
+        settings.reservation_enabled = original_flag
+        settings.reservation_slot_capacity = original_capacity
 
 
 @pytest.mark.asyncio

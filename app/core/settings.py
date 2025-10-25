@@ -44,6 +44,14 @@ class Settings(BaseSettings):
         default=None, alias="RECONCILIATION_REPORT_DIR"
     )
     reservation_reminder_minutes: int = Field(default=15, alias="RESERVATION_REMINDER_MINUTES")
+    reservation_slot_granularity_minutes: int = Field(
+        default=15,
+        alias="RESERVATION_SLOT_GRANULARITY_MINUTES",
+    )
+    reservation_slot_capacity: int = Field(
+        default=10,
+        alias="RESERVATION_SLOT_CAPACITY",
+    )
     static_match_time_window_min: int = Field(default=5, alias="STATIC_MATCH_TIME_WINDOW_MIN")
     delivery_radius_m: int = Field(default=1500, alias="DELIVERY_RADIUS_M")
     print_retry_max: int = Field(default=5, alias="PRINT_RETRY_MAX")

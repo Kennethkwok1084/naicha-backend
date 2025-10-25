@@ -16,6 +16,11 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
+from app.metrics.inventory import (
+    INVENTORY_CURRENT_STOCK,
+    INVENTORY_DEDUCTION_TOTAL,
+    INVENTORY_OVERSELL_TOTAL,
+)
 from app.metrics.orders import (
     ORDER_AUTO_CANCEL_DELAY_SECONDS,
     ORDER_AUTO_CANCEL_TOTAL,
@@ -160,8 +165,14 @@ class OrderService:
             remaining_stock = getattr(product, "stock_quantity", None)
             if remaining_stock is not None:
                 if remaining_stock < item.quantity:
+                    INVENTORY_DEDUCTION_TOTAL.labels(result="insufficient").inc()
+                    INVENTORY_OVERSELL_TOTAL.labels(product_id=str(product.product_id)).inc()
                     raise OrderValidationError(f"Product {item.product_id} is sold out.")
                 product.stock_quantity = remaining_stock - item.quantity
+                INVENTORY_DEDUCTION_TOTAL.labels(result="success").inc()
+                INVENTORY_CURRENT_STOCK.labels(product_id=str(product.product_id)).set(
+                    product.stock_quantity
+                )
                 if product.stock_quantity == 0 and product.inventory_status != "sold_out":
                     product.inventory_status = "sold_out"
 
@@ -482,6 +493,7 @@ class OrderService:
         order_number = self._generate_order_number()
         address_json = payload.address.model_dump() if payload.address else None
         scheduled_at = reservation_plan.scheduled_at_utc if reservation_plan else None
+        reservation_slot_id = reservation_plan.slot_id if reservation_plan else None
 
         return {
             "order_number": order_number,
@@ -498,6 +510,7 @@ class OrderService:
             "created_by_admin_id": None,
             "is_scheduled": bool(reservation_plan),
             "scheduled_at": scheduled_at,
+            "reservation_slot_id": reservation_slot_id,
         }
 
     def _pick_spec_options(
@@ -605,6 +618,7 @@ class OrderService:
         previous_payment_status = order.payment_status
         order.status = "cancelled"
         order.updated_at = now
+        reservation_slot_id = order.reservation_slot_id
 
         if inventory_changes:
             summary = inventory_changes
@@ -640,6 +654,14 @@ class OrderService:
         delay_seconds = max((now - created_at).total_seconds(), 0.0)
         ORDER_AUTO_CANCEL_TOTAL.labels(source=source, result="success").inc()
         ORDER_AUTO_CANCEL_DELAY_SECONDS.labels(source=source).observe(delay_seconds)
+
+        if reservation_slot_id:
+            reservation_service = ReservationService(self._session, self._settings)
+            await reservation_service.release_slot(reservation_slot_id)
+            order.reservation_slot_id = None
+            order.is_scheduled = False
+            await self._session.flush()
+
         return True
 
     async def cancel_stale_pending_orders(

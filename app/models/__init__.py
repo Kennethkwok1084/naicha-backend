@@ -17,6 +17,7 @@ from app.models.orders import (
     PrintJob,
     WantEvent,
 )
+from app.models.reservations import ReservationSlot
 from app.models.shop import ShopProfile, ShopSetting
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "Product",
     "ProductCategory",
     "ProductSpecMapping",
+    "ReservationSlot",
     "ShopProfile",
     "ShopSetting",
     "SpecGroup",

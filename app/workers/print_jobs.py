@@ -9,6 +9,11 @@ from structlog import get_logger
 
 from app.core.settings import Settings, get_settings
 from app.db.session import async_session_factory
+from app.metrics.print_jobs import (
+    PRINT_JOB_RECOVERY_TOTAL,
+    PRINT_JOB_RETRY_COUNT,
+    PRINT_JOB_TOTAL,
+)
 from app.models.orders import Order, OrderItem, PrintJob
 
 logger = get_logger(__name__)
@@ -32,10 +37,12 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
         job = await _acquire_job(session, job_id)
         if job is None:
             logger.warning("print_job.missing", job_id=job_id)
+            PRINT_JOB_TOTAL.labels(result="missing").inc()
             return
 
         if job.status == "done":
             logger.info("print_job.already_done", job_id=job_id)
+            PRINT_JOB_TOTAL.labels(result="already_done").inc()
             return
 
         if job.try_count >= current_settings.print_retry_max:
@@ -49,6 +56,7 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
                 try_count=job.try_count,
                 retry_max=current_settings.print_retry_max,
             )
+            PRINT_JOB_TOTAL.labels(result="retry_limit").inc()
             raise NonRetryablePrintJobError(job.last_error)
 
         job.status = "processing"
@@ -62,6 +70,7 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             job.status = "failed"
             job.last_error = "关联订单不存在"
             await session.commit()
+            PRINT_JOB_TOTAL.labels(result="missing_order").inc()
             raise NonRetryablePrintJobError("关联订单不存在")
 
         items = await _load_order_items(session, order.order_id)
@@ -75,6 +84,7 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             job.next_try_at = None
             await session.commit()
             logger.error("print_job.permanent_failure", job_id=job.job_id, error=job.last_error)
+            PRINT_JOB_TOTAL.labels(result="non_retryable_failure").inc()
         except RetryablePrintJobError as exc:
             job.status = "failed"
             job.last_error = str(exc)
@@ -86,6 +96,7 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
                 try_count=job.try_count,
                 error=job.last_error,
             )
+            PRINT_JOB_TOTAL.labels(result="retry_scheduled").inc()
             raise
         except Exception as exc:
             job.status = "failed"
@@ -93,6 +104,7 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             job.next_try_at = datetime.now(tz=UTC) + _next_retry_delay(job.try_count)
             await session.commit()
             logger.exception("print_job.unexpected_failure", job_id=job.job_id)
+            PRINT_JOB_TOTAL.labels(result="retry_scheduled").inc()
             raise RetryablePrintJobError(job.last_error)
         else:
             job.status = "done"
@@ -101,6 +113,8 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             job.next_try_at = None
             await session.commit()
             logger.info("print_job.completed", job_id=job.job_id)
+            PRINT_JOB_TOTAL.labels(result="success").inc()
+            PRINT_JOB_RETRY_COUNT.observe(job.try_count)
 
 
 async def _acquire_job(session, job_id: int) -> PrintJob | None:
@@ -171,6 +185,10 @@ async def recover_print_jobs(
             job_ids = [row[0] for row in result.fetchall()]
 
     job_ids.sort()
+    if job_ids:
+        PRINT_JOB_RECOVERY_TOTAL.labels(result="recovered").inc(len(job_ids))
+    else:
+        PRINT_JOB_RECOVERY_TOTAL.labels(result="empty").inc()
     return job_ids
 
 
