@@ -31,8 +31,14 @@ RECONCILIATION_DIFF_GAUGE = Gauge(
     ["type"],
 )
 
+CELERY_BEAT_LAST_HEARTBEAT_TIMESTAMP = Gauge(
+    "celery_beat_last_heartbeat_timestamp",
+    "Last heartbeat timestamp reported by Celery beat (UTC epoch seconds).",
+)
+
 
 __all__ = [
+    "CELERY_BEAT_LAST_HEARTBEAT_TIMESTAMP",
     "CELERY_TASK_RUNTIME_SECONDS",
     "RECONCILIATION_DIFF_GAUGE",
     "RECONCILIATION_RUN_TOTAL",

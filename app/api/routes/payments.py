@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limiter import limiter
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.schemas import PaymentNotifyResponseSchema, WechatPaymentNotifySchema
@@ -30,7 +31,7 @@ async def get_payment_service(
     response_model=PaymentNotifyResponseSchema,
     summary="微信支付回调",
 )
-# @limiter.limit("18000/minute;300/second")  # 临时禁用限流
+@limiter.limit("18000/minute;300/second", override_defaults=True)
 async def wechat_payment_notify(
     request: Request,
     response: Response,

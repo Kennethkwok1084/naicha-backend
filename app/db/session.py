@@ -19,12 +19,9 @@ engine: AsyncEngine = create_async_engine(
     echo=settings.app_env == "dev",
     # 启用详细的SQL执行日志(包含参数)
     echo_pool=settings.app_env == "dev",
-    # 性能调优: 连接池配置
-    # 生产环境推荐配置 (pool_size=20, max_overflow=30 = 50 总连接)
-    # 150并发下,每请求平均持有连接 6-10ms,50连接足够 (实测显示100并发0%错误率)
-    # 性能测试需扩充至 pool_size=200, max_overflow=250 应对 200+ 并发
-    pool_size=20,
-    max_overflow=30,
+    # 性能调优: 连接池配置 (支持通过环境变量调整以便区分压测/生产场景)
+    pool_size=max(settings.database_pool_size, 1),
+    max_overflow=max(settings.database_max_overflow, 0),
     pool_pre_ping=True,
     pool_recycle=3600,
 )

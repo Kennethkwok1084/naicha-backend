@@ -20,20 +20,20 @@
   ```
 
 ### 1.2 数据库连接池配置 (P0-7)
-- [ ] `DB_POOL_SIZE` 设置为 `20`
-- [ ] `DB_POOL_MAX_OVERFLOW` 设置为 `30`
-- [ ] 总连接数 = 50 (适配 150 并发场景)
-- [ ] 验证文件: `app/db/session.py:24-25`
+- [ ] `DATABASE_POOL_SIZE` 设置为 `20`（可根据并发压测结果调优）
+- [ ] `DATABASE_MAX_OVERFLOW` 设置为 `30`
+- [ ] 总连接数 ≈ 50，足够覆盖 150 并发场景
+- [ ] 验证文件: `app/db/session.py`
   ```python
-  pool_size=20,
-  max_overflow=30,
+  pool_size=max(settings.database_pool_size, 1),
+  max_overflow=max(settings.database_max_overflow, 0),
   ```
 
 ### 1.3 JWT 安全配置 (P1-6)
-- [ ] `JWT_EXPIRE_MINUTES` 设置为 `10080` (7 天)
+- [ ] `JWT_EXPIRE_MINUTES` 设置为 `1440` (1 天) 或更短
 - [ ] 验证命令:
   ```bash
-  echo $JWT_EXPIRE_MINUTES  # 应输出: 10080
+  echo $JWT_EXPIRE_MINUTES  # 应输出: 1440
   ```
 - [ ] 确认 `JWT_SECRET_KEY` 为生产环境独立密钥 (不与 Staging 共享)
 

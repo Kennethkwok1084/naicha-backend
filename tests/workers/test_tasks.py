@@ -9,7 +9,7 @@ def test_reservation_activate_due_orders_skips_when_lock_held(monkeypatch) -> No
     called = False
 
     def fake_acquire(name: str, interval: int):
-        return False, None
+        return False, None, False
 
     def fake_run(*_: object) -> None:
         nonlocal called
@@ -40,7 +40,7 @@ def test_reservation_activate_due_orders_releases_lock(monkeypatch) -> None:
         await asyncio.sleep(0)
 
     def fake_acquire(name: str, interval: int):
-        return True, fake_lock
+        return True, fake_lock, False
 
     monkeypatch.setattr(tasks_module, "_acquire_task_lock", fake_acquire)
     monkeypatch.setattr(tasks_module, "_reservation_activate_due_orders", fake_task)
@@ -48,3 +48,21 @@ def test_reservation_activate_due_orders_releases_lock(monkeypatch) -> None:
     tasks_module.reservation_activate_due_orders()
 
     assert fake_lock.released is True
+
+
+def test_cancel_stale_pending_orders_skips_when_lock_held(monkeypatch) -> None:
+    called = False
+
+    def fake_acquire(name: str, interval: int):
+        return False, None, False
+
+    def fake_run(*_: object) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(tasks_module, "_acquire_task_lock", fake_acquire)
+    monkeypatch.setattr(tasks_module.asyncio, "run", fake_run)
+
+    tasks_module.cancel_stale_pending_orders()
+
+    assert called is False

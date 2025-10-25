@@ -11,6 +11,7 @@
 8. [「想要」统计排查](#想要统计排查)
 9. [每日对账任务排查](#每日对账任务排查)
 10. [自动降级演练流程](#自动降级演练流程)
+11. [维护方案与 TODO](#维护方案与-todo)
 
 ---
 
@@ -42,7 +43,7 @@ grep -r "# init_rate_limiter\|# @limiter.limit" app/
 
 **检查项**：
 - [ ] `.env` 中设置 `JWT_EXPIRE_MINUTES=60`（1 小时）或 `JWT_EXPIRE_MINUTES=1440`（1 天）
-- [ ] 确认不使用默认值 43200 分钟（30 天）
+- [ ] 确认未将 JWT 有效期放大到超过 1440 分钟（默认 1 天）
 
 **验证方法**：
 ```bash
@@ -678,3 +679,70 @@ spec:
    - 家节点恢复后自动分流 ⇒ 核对 Ingress 权重或 Service Selector
 
 > 演练计划按季度执行，必要时与对账任务一并复盘。
+
+---
+
+## 维护方案与 TODO
+
+### 维护目标
+- 保证 `cancel_pending_order` / `cancel_stale_pending_orders` 不依赖单一 Celery beat，库存冻结不超 5 分钟。
+- 支付回调线程稳定：即使打印队列阻塞，P95 ≤ 400ms，且无本地线程雪崩。
+- Redis 故障时，PaymentMatchService 仍可通过 DB 锁或人工兜底完成匹配。
+- 库存回补覆盖下单、手动取消、退款全流程，AuditLog 可追溯。
+- 限流与连接池参数在 `.env` 中受控，观测面含心跳、队列、锁降级等指标。
+
+### 分域维护策略
+
+1. **订单自动取消链路**
+   - 风险：`cancel_stale_pending_orders` 仅由 Celery beat 驱动，Redis 故障或 beat 掉线会导致库存长时间冻结。
+   - 方案：
+     - ✅ 新增 `POST /api/v1/ops/orders/auto-cancel`（FastAPI 管理路由）直接调用 `OrderService.cancel_stale_pending_orders()` 并带 `operator` 字段，供人工触发。
+     - ✅ `app/workers/tasks.py` 在 Redis 锁不可用时自动写入 `maintenance_jobs` 表，由 `scripts/run_maintenance_jobs.py`（DB Cron）兜底执行。
+     - 观测：Prometheus 指标 `orders_auto_cancelled_total`、`orders_auto_cancel_delay_seconds`，以及 `maintenance.job_*` 日志字段，区分 `source=celery|http|cron`。
+
+2. **支付回调与打印解耦**
+   - 风险：`app/services/payments.py` 在事务内触发打印/忠诚度，当 Celery enqueue 失败时 `_dispatch_local` 在业务线程同步打印，150 并发下会拖慢支付回调。
+   - 方案：
+     - ✅ 引入 `PRINT_DISPATCH_MODE`（`celery|celery_with_local_fallback|local_only`）+ `PRINT_LOCAL_MAX_PARALLEL`，本地降级受限流控制并记录 `print_job.local_dispatch_enqueued`。
+     - ✅ `_dispatch_local` 使用 `BoundedSemaphore`，避免线程无限增长，并支持完全关闭本地降级。
+     - ✅ `process_payment_side_effects` Celery 任务负责忠诚度累积 + WS 广播，支付回调只落库并入队事件。
+     - 新增 WS/Loyalty 派发任务队列，支付回调仅发 `event_id`，由 worker 解耦执行，降低耦合。
+
+3. **分布式锁降级**
+   - 风险：`app/utils/distributed_lock.py` 在 Redis 不可用时直接返回 `False`，`PaymentMatchService` 抛 409，运营无法匹配。
+   - 方案：
+     - `distributed_lock` 增加 `fallback_strategy`：当 Redis 连接异常时自动尝试 `SELECT pg_try_advisory_lock(...)`（以 `merchant_id` 作为 key），失败再记录 `lock_fallback_failed`。
+     - 运维提供 `match_queue`（PostgreSQL 表）记录待人工匹配的支付，后台管理界面可消费。
+     - 观测：新增 `lock_fallback_total{result="db"|"manual"}` 指标，并在告警中提示 Redis 故障 + 锁降级频次。
+
+4. **库存回补闭环**
+   - 风险：仅未支付订单自动回补，退款/部分关闭不补库存。
+   - 方案：
+     - `OrderService.cancel_pending_order` 拆解库存处理为 `InventoryService.restore(order_id, reason)`，在退款任务、Admin 手动取消、异常回调中复用。
+     - Payment/Refund 流程写入 `inventory_adjustments` 审计表，AuditLog 关联，便于追责。
+     - 对 `OrderService.cancel_pending_order` & `RefundService` 增加幂等锁，避免重复回补。
+
+5. **限流与配置自检**
+   - 风险：`RATE_LIMIT_ENABLED=false` 时全局限流关闭。
+   - 方案：
+     - `init_rate_limiter` 在配置关闭时仍对 `/orders`、`/payments/notify` 强制应用 `MIN_RATE_LIMIT_ORDERS`、`MIN_RATE_LIMIT_PAYMENTS`（默认 `3000/min` 和 `300/sec`），并在日志警告。
+     - `app/core/rate_limiter.py` 暴露 `rate_limit_status` metrics，且在健康检查页展示当前限流状态。
+
+6. **数据库连接池与资源观测**
+   - 风险：`app/db/session.py` pool_size/max_overflow 需要与环境匹配。
+   - 方案：
+     - 统一使用 `DATABASE_POOL_SIZE`、`DATABASE_MAX_OVERFLOW` 环境变量，默认 20/30；在启动日志输出最终数值。
+     - 在 `infra/k3s` 中部署 `pgbouncer_exporter` + `redis_exporter`，并配置告警：总连接数 > 80%、Redis 连接耗尽等。
+
+> Celery beat 现每 30s 通过 `report_celery_beat` 任务写入 `maintenance_heartbeats`，并暴露指标 `celery_beat_last_heartbeat_timestamp`，便于 Prometheus/DB Cron 双重监控。
+
+### TODO（按优先级）
+
+1. [ ] **P0 · 自动取消兜底**：`/api/v1/ops/orders/auto-cancel` ✅、`maintenance_jobs` + Cron ✅、`orders_auto_cancel_delay_seconds` ✅，剩余：Cron Job 部署监控（失败报警）与 Celery beat 告警策略。
+2. [ ] **P1 · 支付/打印解耦**：`PRINT_DISPATCH_MODE` + 本地信号量 ✅；WS/Loyalty 异步任务与压测（P95 ≤ 400ms）待完成。
+3. [ ] **P1 · 锁降级策略**：在 `distributed_lock` 中加入 PostgreSQL advisory lock fallback，并提供 `match_queue` 管理入口。
+4. [ ] **P1 · 库存回补扩展**：抽象 `InventoryService.restore`，覆盖退款/手动取消路径并落地 `inventory_adjustments` 审计。
+5. [ ] **P2 · 限流自检**：实现最小限流阈值/metrics/健康页提示，附报警（限流被关闭、命中率过低）。
+6. [ ] **P2 · 连接池观测**：参数化 `DATABASE_POOL_SIZE/MAX_OVERFLOW`，上线 `pgbouncer_exporter` + 告警。
+
+> 所有 TODO 完成后，将在 ChangeLog 中记录依赖的 Feature Flag / 配置项，并更新 `doc/api.md` 涉及的订单/支付接口说明。

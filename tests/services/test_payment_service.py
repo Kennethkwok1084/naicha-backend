@@ -8,7 +8,7 @@ from decimal import Decimal
 import app.services.payments
 import pytest
 from app.core.settings import get_settings
-from app.models.accounts import Coupon, LoyaltyTransaction, User
+from app.models.accounts import User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
 from app.schemas import WechatPaymentNotifySchema
 from app.services.payments import (
@@ -16,7 +16,6 @@ from app.services.payments import (
     PaymentService,
 )
 from app.workers.print_jobs import recover_print_jobs
-from app.ws import manager as manager_module
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -32,13 +31,26 @@ def enqueue_spy(monkeypatch):
     return calls
 
 
+@pytest.fixture
+def payment_side_effects_spy(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake(order_id: int, source: str) -> None:
+        calls.append({"order_id": order_id, "source": source})
+
+    monkeypatch.setattr("app.services.payments.enqueue_payment_side_effects", fake)
+    return calls
+
+
 def _sign(body: bytes) -> str:
     settings = get_settings()
     return hmac.new(settings.secret_key.encode("utf-8"), body, "sha256").hexdigest()
 
 
 @pytest.mark.asyncio
-async def test_payment_service_amount_mismatch(db_session, monkeypatch, enqueue_spy) -> None:
+async def test_payment_service_amount_mismatch(
+    db_session, enqueue_spy, payment_side_effects_spy
+) -> None:
     order = Order(
         order_id=10,
         order_number="202510170010-NA0001",
@@ -48,12 +60,6 @@ async def test_payment_service_amount_mismatch(db_session, monkeypatch, enqueue_
     )
     db_session.add(order)
     await db_session.flush()
-
-    async def fake_broadcast(message):
-        fake_broadcast.calls.append(message)
-
-    fake_broadcast.calls = []
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", fake_broadcast)
 
     service = PaymentService(db_session, get_settings())
     payload = WechatPaymentNotifySchema(
@@ -76,12 +82,14 @@ async def test_payment_service_amount_mismatch(db_session, monkeypatch, enqueue_
         select(PaymentRecord).where(PaymentRecord.txn_id == "txn_mismatch")
     )
     assert payment.scalars().first() is None
-    assert fake_broadcast.calls == []
     assert enqueue_spy == []
+    assert payment_side_effects_spy == []
 
 
 @pytest.mark.asyncio
-async def test_payment_service_nested_transaction(db_session, monkeypatch, enqueue_spy) -> None:
+async def test_payment_service_nested_transaction(
+    db_session, enqueue_spy, payment_side_effects_spy
+) -> None:
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
     async with session_factory() as setup_session:
@@ -107,13 +115,6 @@ async def test_payment_service_nested_transaction(db_session, monkeypatch, enque
         order_id = order.order_id
         order_number = order.order_number
         await setup_session.commit()
-
-    broadcasts: list[dict] = []
-
-    async def fake_broadcast(message):
-        broadcasts.append(message)
-
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", fake_broadcast)
 
     payload = WechatPaymentNotifySchema(
         event_id="evt_nested",
@@ -147,7 +148,7 @@ async def test_payment_service_nested_transaction(db_session, monkeypatch, enque
         )
         assert payment_record is not None
 
-    assert len(broadcasts) == 1
+    assert payment_side_effects_spy == [{"order_id": order_id, "source": "payment_callback"}]
     assert len(enqueue_spy) == 1
 
 
@@ -176,7 +177,9 @@ async def _prepare_order_for_loyalty(session, *, user_id: int, quantity: int, or
 
 
 @pytest.mark.asyncio
-async def test_payment_service_awards_loyalty_points(db_session, monkeypatch, enqueue_spy) -> None:
+async def test_payment_service_awards_loyalty_points(
+    db_session, enqueue_spy, payment_side_effects_spy
+) -> None:
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
     async with session_factory() as setup_session:
@@ -185,11 +188,6 @@ async def test_payment_service_awards_loyalty_points(db_session, monkeypatch, en
         await setup_session.flush()
         await _prepare_order_for_loyalty(setup_session, user_id=user.user_id, quantity=2, order_id=30)
         await setup_session.commit()
-
-    async def noop_broadcast(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
 
     payload = WechatPaymentNotifySchema(
         event_id="evt_loyalty",
@@ -213,30 +211,13 @@ async def test_payment_service_awards_loyalty_points(db_session, monkeypatch, en
 
         assert response["status"] == "SUCCESS"
 
-        user_refreshed = await session.get(User, 300)
-        assert user_refreshed is not None
-        assert user_refreshed.loyalty_points == 2
-
-        award_tx = await session.scalar(
-            select(LoyaltyTransaction).where(
-                LoyaltyTransaction.user_id == 300,
-                LoyaltyTransaction.order_id == 30,
-                LoyaltyTransaction.reason == "order_paid",
-            )
-        )
-        assert award_tx is not None
         assert len(enqueue_spy) == 1
-
-        coupons = list(
-            (await session.execute(select(Coupon).where(Coupon.user_id == 300))).scalars()
-        )
-        assert len(coupons) == 1
-        assert coupons[0].type == "free_any_drink"
+        assert payment_side_effects_spy == [{"order_id": 30, "source": "payment_callback"}]
 
 
 @pytest.mark.asyncio
 async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
-    db_session, monkeypatch, enqueue_spy
+    db_session, enqueue_spy, payment_side_effects_spy
 ) -> None:
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
@@ -246,13 +227,6 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         await setup_session.flush()
         await _prepare_order_for_loyalty(setup_session, user_id=user.user_id, quantity=2, order_id=40)
         await setup_session.commit()
-
-    broadcasts: list[dict] = []
-
-    async def capture_broadcast(message):
-        broadcasts.append(message)
-
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", capture_broadcast)
 
     payload = WechatPaymentNotifySchema(
         event_id="evt_coupon",
@@ -271,37 +245,8 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
         await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
 
-        user_refreshed = await session.get(User, 400)
-        assert user_refreshed is not None
-        assert user_refreshed.loyalty_points == 1  # 9 + 2 - 10
-
-        coupons = list(
-            (await session.execute(select(Coupon).where(Coupon.user_id == 400))).scalars()
-        )
-        assert len(coupons) == 2
-        assert all(coupon.type == "free_any_drink" for coupon in coupons)
-
-        order_paid_tx = list(
-            (await session.execute(
-                select(LoyaltyTransaction).where(
-                    LoyaltyTransaction.user_id == 400,
-                    LoyaltyTransaction.order_id == 40,
-                    LoyaltyTransaction.reason == "order_paid",
-                )
-            )).scalars()
-        )
-        assert len(order_paid_tx) == 1
-
-        coupon_tx = list(
-            (await session.execute(
-                select(LoyaltyTransaction).where(
-                    LoyaltyTransaction.user_id == 400,
-                    LoyaltyTransaction.reason == "coupon_grant",
-                )
-            )).scalars()
-        )
-        assert len(coupon_tx) == 2
         assert enqueue_spy  # 多次通知可触发多次入队,至少保证有入队行为
+        assert payment_side_effects_spy == [{"order_id": 40, "source": "payment_callback"}]
 
 
 @pytest.mark.asyncio
@@ -332,12 +277,6 @@ async def test_payment_notification_creates_single_print_job(
             )
             order_id = order.order_id
             order_number = order.order_number
-
-    async def noop_broadcast(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
-
     payload = WechatPaymentNotifySchema(
         event_id="evt_print_race",
         order_number=order_number,
@@ -418,10 +357,6 @@ async def test_payment_service_logs_replayed_notification(
         order_number = order.order_number
         await setup_session.commit()
 
-    async def noop_broadcast(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
     info_calls: list[tuple[str, dict]] = []
 
     original_info = app.services.payments.logger.info  # type: ignore[attr-defined]
@@ -488,11 +423,6 @@ async def test_payment_commit_but_enqueue_failed(db_session, monkeypatch) -> Non
         order_id = order.order_id
         order_number = order.order_number
         await setup_session.commit()
-
-    async def noop_broadcast(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
 
     def explode_enqueue(_job_id: int) -> None:
         raise RuntimeError("enqueue crashed")

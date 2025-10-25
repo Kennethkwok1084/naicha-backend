@@ -623,30 +623,19 @@ engine = create_async_engine(
 
 ---
 
-### 2. 😱 高危风险：JWT 有效期长达 30 天
+### 2. ✅ JWT 有效期收敛
 
-**问题**：`app/core/settings.py` 中 JWT 默认有效期：
+**现状**：`app/core/settings.py` 中 JWT 默认有效期已更新为：
 ```python
-jwt_expire_minutes: int = Field(default=43200, alias="JWT_EXPIRE_MINUTES")
-# 43200 分钟 = 720 小时 = 30 天
+jwt_expire_minutes: int = Field(default=1440, alias="JWT_EXPIRE_MINUTES")
+# 1440 分钟 = 24 小时
 ```
 
-**风险**：
-- **严重违反 V2.0 总纲**中"15-60 分钟"的安全设计
-- Token 泄露后，黑客有 **30 天**时间冒充用户
-- 无法及时撤销权限（如用户注销、角色变更）
+**建议**：
+- 生产环境可继续下调至 `JWT_EXPIRE_MINUTES=60`（1 小时）提升安全性
+- 发生权限变更时务必刷新 Token，避免旧 Token 持续可用
 
-**修复**：
-在生产 `.env` 中设置：
-```bash
-# 推荐：1 小时
-JWT_EXPIRE_MINUTES=60
-
-# 或：1 天（最大容忍）
-JWT_EXPIRE_MINUTES=1440
-```
-
-**状态**：❌ **待修复**（默认值必须在 `.env.example` 中改为安全值）
+**状态**：✅ 已默认收敛，仍需在上线 checklist 中确认具体数值
 
 ---
 
@@ -658,29 +647,17 @@ pool_size=200, max_overflow=250,
 # 最大 450 个连接
 ```
 
-**风险**：
-- **2c2g 服务器内存无法支撑** 450 个 PostgreSQL 连接
-- 每个连接约占用 10MB 内存，450 × 10MB = **4.5GB**（远超服务器配置）
-- 会因 OOM（内存耗尽）导致数据库崩溃
-
-**修复**：
-根据"并发最多 10 个"的实际需求：
+**现状**：
 ```python
-pool_size=10,        # 基础连接池
-max_overflow=10,     # 溢出连接
-# 最大 20 个连接
+pool_size=max(settings.database_pool_size, 1)
+max_overflow=max(settings.database_max_overflow, 0)
 ```
 
-或按 100 并发压测需求（已验证）：
-```python
-pool_size=50,        # 基础连接池
-max_overflow=30,     # 溢出连接
-# 最大 80 个连接（支持 100 并发）
-```
+**建议**：
+- 生产环境默认 `DATABASE_POOL_SIZE=20`、`DATABASE_MAX_OVERFLOW=30`
+- 压测或大促前，可按容量规划临时调高，再于恢复后回落
 
-**状态**：❌ **待修复**（当前 450 连接为压测配置，生产必须降低）
-
-**说明**：当前 `pool_size=200, max_overflow=250` 是为支持 100-200 并发压测配置的，但 200 并发已确认超出架构承载能力（21% 错误率）。生产环境建议使用 80 连接（支持 100 并发，0% 错误）或根据实际资源调整。
+**状态**：✅ 已支持配置化，但仍需在发布流程中确认数值
 
 ---
 

@@ -17,10 +17,8 @@ from app.schemas import (
     AdminPaymentMatchRequestSchema,
     AdminPaymentMatchResponseSchema,
 )
-from app.services.loyalty import LoyaltyService
 from app.utils.distributed_lock import distributed_lock
-from app.workers import enqueue_print_job
-from app.ws.manager import merchant_notifier
+from app.workers import enqueue_payment_side_effects, enqueue_print_job
 
 
 class PaymentMatchError(Exception):
@@ -87,7 +85,12 @@ class PaymentMatchService:
             lock_suffix = f"{amount}_{int(paid_at.timestamp())}"
             lock_key = f"payment_match:fuzzy:{lock_suffix}"
 
-        async with distributed_lock(lock_key, timeout=10, blocking=False) as acquired:
+        async with distributed_lock(
+            lock_key,
+            timeout=10,
+            blocking=False,
+            session=self._session,
+        ) as acquired:
             if not acquired:
                 # 未获取到锁,说明有并发请求正在处理同一资源,拒绝服务
                 self._logger.warning(
@@ -128,6 +131,8 @@ class PaymentMatchService:
 
         broadcast_payload: dict[str, Any] | None = None
         job_to_enqueue: int | None = None
+        should_dispatch_side_effects = False
+        dispatch_order_id: int | None = None
 
         if self._session.in_transaction():
             transaction_ctx = self._session.begin_nested()
@@ -213,19 +218,11 @@ class PaymentMatchService:
             self._session.add(audit_log)
 
             await self._session.flush()
-            await LoyaltyService(self._session, self._settings).award_on_payment(order)
 
             broadcast_payload = self._build_broadcast_payload(order)
+            should_dispatch_side_effects = True
+            dispatch_order_id = order.order_id
             PAYMENT_MATCH_ATTEMPT_TOTAL.labels(result="matched").inc()
-
-        if broadcast_payload is not None:
-            try:
-                await merchant_notifier.broadcast(broadcast_payload)
-            except Exception:
-                self._logger.exception(
-                    "admin.payment_match.broadcast_failed",
-                    order_id=broadcast_payload["order"]["order_id"],
-                )
 
         if job_to_enqueue is not None:
             try:
@@ -235,6 +232,9 @@ class PaymentMatchService:
                     "admin.payment_match.print_enqueue_failed",
                     job_id=job_to_enqueue,
                 )
+
+        if should_dispatch_side_effects and dispatch_order_id is not None:
+            enqueue_payment_side_effects(dispatch_order_id, source="payment_match")
 
         return AdminPaymentMatchResponseSchema(
             status="matched",

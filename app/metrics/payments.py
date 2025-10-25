@@ -18,8 +18,15 @@ PAYMENT_CALLBACK_LATENCY_MS = Histogram(
     buckets=(5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120),
 )
 
+PAYMENT_SIDE_EFFECTS_TOTAL = Counter(
+    "payment_side_effects_total",
+    "支付链路异步副作用任务执行次数。",
+    ["result", "source"],
+)
+
 __all__ = [
     "PAYMENT_CALLBACK_LATENCY_MS",
     "PAYMENT_CALLBACK_TOTAL",
     "PAYMENT_MATCH_ATTEMPT_TOTAL",
+    "PAYMENT_SIDE_EFFECTS_TOTAL",
 ]

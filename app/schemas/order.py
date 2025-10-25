@@ -128,3 +128,17 @@ class AdminOrderResponseSchema(BaseModel):
     total_price: float
     created_at: datetime
     print_job_id: int | None = None
+
+
+class OpsAutoCancelRequestSchema(BaseModel):
+    cutoff_minutes: int = Field(default=30, ge=1, le=1440)
+    limit: int = Field(default=100, ge=1, le=500)
+    reason: str | None = Field(default=None, max_length=120)
+
+
+class OpsAutoCancelResponseSchema(BaseModel):
+    cancelled_order_ids: list[int]
+    count: int
+    cutoff_iso: datetime
+    source: Literal["http", "celery", "cron"]
+    operator_admin_id: int

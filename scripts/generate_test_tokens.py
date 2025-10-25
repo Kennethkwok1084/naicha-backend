@@ -66,7 +66,7 @@ def main() -> None:
     print()
     print("💡 提示：")
     print("   - 这些 Token 用于开发/测试环境，不要在生产环境使用")
-    print("   - Token 过期时间由 JWT_EXPIRE_MINUTES 控制（默认 43200 分钟 = 30 天）")
+    print("   - Token 过期时间由 JWT_EXPIRE_MINUTES 控制（默认 1440 分钟 = 1 天）")
     print("   - 如需自定义 ID，使用环境变量：")
     print("     ADMIN_ID=2 USER_ID=3 python scripts/generate_test_tokens.py")
     print()

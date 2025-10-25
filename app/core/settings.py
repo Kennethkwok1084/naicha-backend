@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, alias="APP_PORT")
 
     secret_key: str = Field(alias="SECRET_KEY")
-    jwt_expire_minutes: int = Field(default=10080, alias="JWT_EXPIRE_MINUTES")  # 7天, 上线前从30天缩短
-    
+    jwt_expire_minutes: int = Field(default=1440, alias="JWT_EXPIRE_MINUTES")  # 默认 1 天
+
     # Performance testing secret key for payment callback simulation
     perf_secret_key: str | None = Field(default=None, alias="PERF_SECRET_KEY")
 
@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     database_proxy_url: str | None = Field(default=None, alias="DATABASE_PROXY_URL")
     pgbouncer_host: str = Field(default="localhost", alias="PGBOUNCER_HOST")
     pgbouncer_port: int = Field(default=5432, alias="PGBOUNCER_PORT")
+    database_pool_size: int = Field(default=20, alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=30, alias="DATABASE_MAX_OVERFLOW")
 
     prometheus_enabled: bool = Field(default=True, alias="PROMETHEUS_ENABLED")
     waf_trust_proxy: bool = Field(default=True, alias="WAF_TRUST_PROXY")
@@ -48,7 +50,18 @@ class Settings(BaseSettings):
     print_recovery_interval_seconds: int = Field(
         default=60, alias="PRINT_RECOVERY_INTERVAL_SECONDS"
     )
+    print_dispatch_mode: Literal["celery", "celery_with_local_fallback", "local_only"] = Field(
+        default="celery_with_local_fallback",
+        alias="PRINT_DISPATCH_MODE",
+    )
+    print_local_max_parallel: int = Field(default=4, alias="PRINT_LOCAL_MAX_PARALLEL")
     guest_session_ttl_minutes: int = Field(default=43200, alias="GUEST_SESSION_TTL_MINUTES")
+    order_pending_timeout_minutes: int = Field(
+        default=30, alias="ORDER_PENDING_TIMEOUT_MINUTES"
+    )
+    order_pending_cleanup_interval_seconds: int = Field(
+        default=120, alias="ORDER_PENDING_CLEANUP_INTERVAL_SECONDS"
+    )
 
     menu_cache_ttl_seconds: int = Field(default=240, alias="MENU_CACHE_TTL_SECONDS")
     merchant_ws_recent_minutes: int = Field(default=5, alias="MERCHANT_WS_RECENT_MINUTES")
@@ -74,6 +87,7 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://localhost:5173", alias="ALLOWED_ORIGINS"
     )
     rate_limit_default: str = Field(default="300/minute", alias="RATE_LIMIT_DEFAULT")
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
     perf_disable_http_overheads: bool = Field(
         default=False, alias="PERF_DISABLE_HTTP_OVERHEADS"
     )

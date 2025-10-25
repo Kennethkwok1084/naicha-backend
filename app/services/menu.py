@@ -8,7 +8,7 @@ from collections import defaultdict
 from threading import Lock
 from typing import Any
 
-import redis.asyncio as redis
+from redis.asyncio import Redis, from_url
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ _MENU_CACHE: dict[str, tuple[float, int | None, dict[str, Any]]] = {}
 
 _MENU_VERSION_KEY = "menu:version"
 _menu_version_lock = Lock()
-_menu_version_client: redis.Redis | None = None
+_menu_version_client: Redis | None = None
 _menu_version_disabled = False
 
 
@@ -41,7 +41,7 @@ def _disable_menu_version_tracking() -> None:
     _menu_version_client = None
 
 
-def _get_version_client(settings: Settings) -> redis.Redis | None:
+def _get_version_client(settings: Settings) -> Redis | None:
     global _menu_version_client
     if _menu_version_disabled:
         return None
@@ -53,7 +53,7 @@ def _get_version_client(settings: Settings) -> redis.Redis | None:
         if client is not None:
             return client
         try:
-            client = redis.Redis.from_url(settings.celery_broker_url, decode_responses=True)
+            client = from_url(settings.celery_broker_url, decode_responses=True)
         except Exception as exc:  # pragma: no cover - 初始化失败仅记录
             logger.warning("menu.cache.version_client_init_failed", error=str(exc))
             _disable_menu_version_tracking()

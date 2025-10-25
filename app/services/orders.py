@@ -16,15 +16,20 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
-from app.metrics.orders import ORDER_CREATE_TOTAL
+from app.metrics.orders import (
+    ORDER_AUTO_CANCEL_DELAY_SECONDS,
+    ORDER_AUTO_CANCEL_TOTAL,
+    ORDER_CREATE_TOTAL,
+)
 from app.models.accounts import User
 from app.models.catalog import Product, ProductSpecMapping, SpecGroup, SpecOption
-from app.models.orders import IdempotencyKey, Order, OrderItem
+from app.models.orders import AuditLog, IdempotencyKey, Order, OrderItem
 from app.schemas.order import (
     OrderCreateRequestSchema,
     OrderPaymentJsapiRequestSchema,
     OrderPaymentNativeRequestSchema,
 )
+from app.services.inventory import InventoryService
 from app.services.reservations import ReservationService, ReservationValidationError
 
 
@@ -556,6 +561,115 @@ class OrderService:
     def _ensure_order_pending(order: Order) -> None:
         if order.status != "pending_payment":
             raise OrderConflictError("Order is not in pending_payment status.")
+
+    async def cancel_pending_order(
+        self,
+        order_id: int,
+        *,
+        reason: str,
+        source: str = "celery",
+    ) -> bool:
+        bind = getattr(self._session, "bind", None)
+        if bind is not None:
+            dialect_name = getattr(bind.dialect, "name", "")
+        else:
+            async with self._session.connection() as conn:
+                dialect_name = conn.dialect.name
+
+        stmt = select(Order).where(Order.order_id == order_id)
+        if dialect_name != "sqlite":
+            stmt = stmt.with_for_update()
+
+        result = await self._session.execute(stmt)
+        order = result.scalar_one_or_none()
+        if order is None:
+            ORDER_AUTO_CANCEL_TOTAL.labels(source=source, result="not_found").inc()
+            return False
+        if order.status != "pending_payment" or order.payment_status != "pending":
+            ORDER_AUTO_CANCEL_TOTAL.labels(source=source, result="not_pending").inc()
+            return False
+
+        items_result = await self._session.execute(
+            select(OrderItem).where(OrderItem.order_id == order.order_id)
+        )
+        items = list(items_result.scalars().all())
+
+        inventory_service = InventoryService(self._session, self._settings)
+        inventory_changes = await inventory_service.restore_from_order_items(
+            items,
+            dialect_name=dialect_name,
+        )
+
+        now = datetime.now(tz=UTC)
+        previous_status = order.status
+        previous_payment_status = order.payment_status
+        order.status = "cancelled"
+        order.updated_at = now
+
+        if inventory_changes:
+            summary = inventory_changes
+        else:
+            summary = None
+
+        audit = AuditLog(
+            actor_type="system",
+            actor_admin_id=None,
+            actor_user_id=None,
+            action="order.auto_cancel",
+            target_table="orders",
+            target_id=str(order.order_id),
+            before_json={
+                "status": previous_status,
+                "payment_status": previous_payment_status,
+            },
+            after_json={
+                "status": order.status,
+                "payment_status": order.payment_status,
+                "reason": reason,
+                "inventory_restored": summary,
+            },
+            ip=None,
+            user_agent=None,
+        )
+        self._session.add(audit)
+
+        await self._session.flush()
+        created_at = order.created_at or now
+        if created_at.tzinfo is None or created_at.tzinfo.utcoffset(created_at) is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        delay_seconds = max((now - created_at).total_seconds(), 0.0)
+        ORDER_AUTO_CANCEL_TOTAL.labels(source=source, result="success").inc()
+        ORDER_AUTO_CANCEL_DELAY_SECONDS.labels(source=source).observe(delay_seconds)
+        return True
+
+    async def cancel_stale_pending_orders(
+        self,
+        cutoff: datetime,
+        *,
+        limit: int = 50,
+        reason: str = "auto_cancel.pending_timeout",
+        source: str = "celery",
+    ) -> list[int]:
+        stmt = (
+            select(Order.order_id)
+            .where(
+                Order.status == "pending_payment",
+                Order.payment_status == "pending",
+                Order.created_at <= cutoff,
+            )
+            .order_by(Order.created_at)
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        order_ids = [row[0] for row in result.fetchall()]
+
+        cancelled: list[int] = []
+        for target_id in order_ids:
+            success = await self.cancel_pending_order(target_id, reason=reason, source=source)
+            if success:
+                cancelled.append(target_id)
+
+        return cancelled
 
     def _build_order_response(
         self,

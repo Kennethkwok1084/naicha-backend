@@ -7,6 +7,7 @@ from app.models.catalog import (
     SpecGroup,
     SpecOption,
 )
+from app.models.maintenance import MaintenanceHeartbeat, MaintenanceJob
 from app.models.orders import (
     AuditLog,
     IdempotencyKey,
@@ -39,4 +40,6 @@ __all__ = [
     "User",
     "UserAddress",
     "WantEvent",
+    "MaintenanceJob",
+    "MaintenanceHeartbeat",
 ]

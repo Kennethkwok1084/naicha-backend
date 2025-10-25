@@ -7,7 +7,6 @@ import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from time import perf_counter
-from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import insert, select, update
@@ -25,9 +24,7 @@ from app.metrics.payments import (
 )
 from app.models.orders import Order, PaymentRecord, PrintJob
 from app.schemas.payment import WechatPaymentNotifySchema
-from app.services.loyalty import LoyaltyService
-from app.workers import enqueue_print_job
-from app.ws.manager import merchant_notifier
+from app.workers import enqueue_payment_side_effects, enqueue_print_job
 
 logger = get_logger(__name__)
 
@@ -78,8 +75,9 @@ class PaymentService:
 
             notify_data = json.loads(payload.model_dump_json())
             status_changed = False
-            broadcast_payload: dict[str, Any] | None = None
             job_to_enqueue: int | None = None
+            should_dispatch_side_effects = False
+            dispatch_order_id: int | None = None
 
             if self._session.in_transaction():
                 transaction_ctx = self._session.begin_nested()
@@ -115,6 +113,8 @@ class PaymentService:
                 if status_changed:
                     update_values["status"] = "paid"
                     update_values["updated_at"] = now_utc
+                    dispatch_order_id = order.order_id
+                    should_dispatch_side_effects = True
                 if order.payment_channel is None:
                     update_values["payment_channel"] = payload.channel
 
@@ -237,21 +237,11 @@ class PaymentService:
                                     .values(next_try_at=now_utc)
                             )
 
-                if status_changed:
-                    broadcast_payload = self._build_broadcast_payload(
-                        SimpleNamespace(
-                            order_id=updated_order.order_id,
-                            order_number=updated_order.order_number,
-                            total_price=updated_order.total_price,
-                            status=updated_order.status,
-                            updated_at=updated_order.updated_at,
-                        )
-                    )
-
                 if record_inserted:
-                    await LoyaltyService(self._session, self._settings).award_on_payment(
-                        order,
-                        skip_duplicate_check=True,
+                    logger.info(
+                        "payment.payment_record_inserted",
+                        order_id=order.order_id,
+                        record=payload.transaction_id,
                     )
                 await self._session.flush()
 
@@ -259,16 +249,6 @@ class PaymentService:
                     job_to_enqueue = job_candidate.job_id
                 elif job_id_from_existing is not None:
                     job_to_enqueue = job_id_from_existing
-
-            if status_changed and broadcast_payload is not None:
-                try:
-                    await merchant_notifier.broadcast(broadcast_payload)
-                except Exception:
-                    logger.exception(
-                        "payment.broadcast_failed",
-                        order_number=payload.order_number,
-                        txn_id=payload.transaction_id,
-                    )
 
             if job_to_enqueue is not None:
                 try:
@@ -279,6 +259,9 @@ class PaymentService:
                         job_id=job_to_enqueue,
                         order_number=payload.order_number,
                     )
+
+            if should_dispatch_side_effects and dispatch_order_id is not None:
+                enqueue_payment_side_effects(dispatch_order_id, source="payment_callback")
 
             return {"status": "SUCCESS"}
         except PaymentSignatureError:
@@ -365,17 +348,3 @@ class PaymentService:
                 index_elements=[PaymentRecord.txn_id]
             )
         return insert(PaymentRecord).values(**values)
-
-    @staticmethod
-    def _build_broadcast_payload(order: Order) -> dict[str, Any]:
-        paid_at = order.updated_at or datetime.now(tz=UTC)
-        return {
-            "type": "order.paid",
-            "order": {
-                "order_id": order.order_id,
-                "order_number": order.order_number,
-                "total_price": float(order.total_price),
-                "status": order.status,
-                "paid_at": paid_at.isoformat(),
-            },
-        }

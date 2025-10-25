@@ -7,9 +7,8 @@ import pytest
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
-from app.models.accounts import Admin, Coupon, User
+from app.models.accounts import Admin, User
 from app.models.orders import Order, PaymentRecord, PrintJob
-from app.ws import manager as manager_module
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -51,10 +50,10 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
     def fake_enqueue(job_id: int) -> None:
         enqueued.append(job_id)
 
-    broadcasts: list[dict] = []
+    side_effects: list[tuple[int, str]] = []
 
-    async def fake_broadcast(message):
-        broadcasts.append(message)
+    def fake_side_effect(order_id: int, source: str) -> None:
+        side_effects.append((order_id, source))
 
     # Mock distributed_lock to always succeed in tests
     from contextlib import asynccontextmanager
@@ -65,7 +64,10 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
 
     monkeypatch.setattr("app.services.payment_match.distributed_lock", mock_distributed_lock)
     monkeypatch.setattr("app.services.payment_match.enqueue_print_job", fake_enqueue)
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", fake_broadcast)
+    monkeypatch.setattr(
+        "app.services.payment_match.enqueue_payment_side_effects",
+        fake_side_effect,
+    )
 
     token = _admin_token(admin.admin_id)
     app.dependency_overrides[get_async_session] = lambda: db_session
@@ -111,12 +113,7 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
     )
     assert len(print_jobs) == 1
     assert enqueued == [print_jobs[0].job_id]
-    assert broadcasts and broadcasts[0]["order"]["order_id"] == order.order_id
-
-    coupons = list(
-        (await db_session.execute(select(Coupon).where(Coupon.user_id == user.user_id))).scalars()
-    )
-    assert len(coupons) == 2
+    assert side_effects == [(order.order_id, "payment_match")]
 
 
 @pytest.mark.asyncio
@@ -236,8 +233,10 @@ async def test_admin_payment_match_manual_force_success(db_session, monkeypatch)
     def fake_enqueue(job_id: int) -> None:
         enqueued.append(job_id)
 
-    async def noop_broadcast(*_args, **_kwargs):
-        return None
+    side_effects: list[tuple[int, str]] = []
+
+    def fake_side_effect(order_id: int, source: str) -> None:
+        side_effects.append((order_id, source))
 
     # Mock distributed_lock to always succeed in tests
     from contextlib import asynccontextmanager
@@ -248,7 +247,10 @@ async def test_admin_payment_match_manual_force_success(db_session, monkeypatch)
 
     monkeypatch.setattr("app.services.payment_match.distributed_lock", mock_distributed_lock)
     monkeypatch.setattr("app.services.payment_match.enqueue_print_job", fake_enqueue)
-    monkeypatch.setattr(manager_module.merchant_notifier, "broadcast", noop_broadcast)
+    monkeypatch.setattr(
+        "app.services.payment_match.enqueue_payment_side_effects",
+        fake_side_effect,
+    )
 
     token = _admin_token(admin.admin_id)
     app.dependency_overrides[get_async_session] = lambda: db_session
@@ -276,26 +278,20 @@ async def test_admin_payment_match_manual_force_success(db_session, monkeypatch)
     assert response.status_code == 200, response.json()
     payload = response.json()
     assert payload["order_id"] == order_b.order_id
+    assert side_effects == [(order_b.order_id, "payment_match")]
     assert payload["payment_status"] == "paid"
 
     await db_session.refresh(order_b)
     await db_session.refresh(payment)
-    await db_session.refresh(user)
 
     assert payment.match_status == "manual_matched"
     assert payment.matched_order_id == order_b.order_id
     assert payment.matched_by_admin_id == admin.admin_id
     assert payment.qr_session_id == "qr-force"
     assert order_b.status == "paid"
-    assert user.loyalty_points == 2  # 12 元获得 12 积分 -> 发券 1 张, 剩余 2
 
     print_jobs = list(
         (await db_session.execute(select(PrintJob).where(PrintJob.order_id == order_b.order_id))).scalars()
     )
     assert len(print_jobs) == 1
     assert enqueued == [print_jobs[0].job_id]
-
-    user_coupons = list(
-        (await db_session.execute(select(Coupon).where(Coupon.user_id == user.user_id))).scalars()
-    )
-    assert len(user_coupons) == 1

@@ -94,7 +94,7 @@ uvicorn app.main:app --reload --port 8000
 ```
 APP_ENV=dev
 SECRET_KEY=__GENERATE_ME__
-JWT_EXPIRE_MINUTES=43200
+JWT_EXPIRE_MINUTES=1440
 DATABASE_URL=postgresql+asyncpg://user:pass@pgbouncer:6432/naicha
 DATABASE_PROXY_URL=postgresql+asyncpg://user:pass@pgbouncer:6432/naicha
 PGBOUNCER_HOST=pgbouncer

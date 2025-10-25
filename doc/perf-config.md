@@ -495,6 +495,19 @@ sqlalchemy.exc.TimeoutError: QueuePool limit of size 200 overflow 250 reached
 
 ---
 
+## PRINT_DISPATCH_MODE 压测步骤
+
+1. **设置模式**：在 `docker compose`/K3s 环境中将 `PRINT_DISPATCH_MODE` 配置为 `celery`、`celery_with_local_fallback`、`local_only`，逐一重启 API/worker/beat。
+2. **运行脚本**：每种模式执行
+   ```bash
+   export PRINT_DISPATCH_MODE=celery_with_local_fallback
+   docker compose up -d api worker beat
+   python scripts/benchmark_payment_callback.py --iterations 60 --concurrency 6 --secret-key $PERF_SECRET_KEY
+   ```
+   脚本会自动创建游客订单并发送支付回调，输出 Mean/P50/P95/Max。
+3. **记录结果**：将三种模式的延迟数据写入 `perf_results/print_dispatch_mode.md`，并从 Prometheus 指标 `payment_callback_latency_ms` 验证 P95 ≤ 400ms。
+4. **异常定位**：若 `local_only` 模式出现大量失败，关注日志 `print_job.local_fallback_rejected` 与 `PAYMENT_SIDE_EFFECTS_TOTAL{result=\"failed\"}`；必要时执行 `python scripts/run_maintenance_jobs.py --limit 20` 清理残留任务。
+
 ## 📞 联系支持
 
 遇到问题？联系团队：

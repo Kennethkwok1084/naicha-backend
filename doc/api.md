@@ -657,6 +657,49 @@
 - **变更历史**：
   - 2025-10-21：首次发布（M4）
 
+### 待支付订单手动自动取消
+- **状态**：新增 （日期：2025-10-28）
+- **路径/方法**：`POST /api/v1/ops/orders/auto-cancel`
+- **权限**：管理员 JWT（角色：admin/manager；用于应急触发）
+- **幂等要求**：否（每次调用都会重新扫描）
+- **限流**：建议通过网关限制 6 req/min/IP
+- **请求体**：
+```json
+{
+  "cutoff_minutes": 45,
+  "limit": 100,
+  "reason": "auto_cancel.ops_drill"
+}
+```
+- **字段说明**：
+  - `cutoff_minutes`：扫描创建时间早于当前 `cutoff_minutes` 的待支付订单（默认 30，范围 1-1440）
+  - `limit`：本次最多取消订单数（默认 100，上限 500）
+  - `reason`：自定义审计原因，默认 `auto_cancel.manual_trigger`
+- **响应体**：
+```json
+{
+  "cancelled_order_ids": [5001, 5002],
+  "count": 2,
+  "cutoff_iso": "2025-10-28T03:10:00Z",
+  "source": "http",
+  "operator_admin_id": 101
+}
+```
+- **错误码**：
+  - 403 当前账号无权执行自动取消任务 —— 非 admin/manager
+  - 422 cutoff_minutes/limit 超出允许范围
+- **副作用**：逐条调用 `OrderService.cancel_pending_order()`，回补库存、写 `audit_logs`（action=`order.auto_cancel`），累加指标 `orders_auto_cancelled_total{source="http"}`、`orders_auto_cancel_delay_seconds`
+- **审计记录**：继承 `order.auto_cancel` + 记录 `reason` 与 `operator_admin_id`
+- **观测指标**：
+  - `orders_auto_cancelled_total{source=celery|http|cron,result=success|not_found|not_pending}`
+  - `orders_auto_cancel_delay_seconds{source=...}`
+- **测试清单**：
+  - [x] 触发成功（回补库存 + 状态变更）
+  - [x] 权限拦截（clerk 禁止）
+  - [ ] 大批量基准测试
+- **变更历史**：
+  - 2025-10-28：首次发布（M6）
+
 ### 更新商品库存状态
 - **状态**：新增 （日期：2025-10-24）
 - **路径/方法**：`PUT /api/v1/admin/inventory/products/{product_id}`

@@ -55,6 +55,22 @@ beat_schedule.setdefault(
         "options": {"expires": 3600},
     },
 )
+beat_schedule.setdefault(
+    "cancel_stale_pending_orders",
+    {
+        "task": "app.workers.tasks.cancel_stale_pending_orders",
+        "schedule": settings.order_pending_cleanup_interval_seconds,
+        "options": {"expires": 300},
+    },
+)
+beat_schedule.setdefault(
+    "celery_beat_heartbeat",
+    {
+        "task": "app.workers.tasks.report_celery_beat",
+        "schedule": 30,
+        "options": {"expires": 60},
+    },
+)
 celery_app.conf.beat_schedule = beat_schedule
 
 celery_app.autodiscover_tasks(["app.workers"])

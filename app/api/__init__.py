@@ -12,6 +12,7 @@ from app.api.routes import (
     users,
     want,
     ws,
+    ops,
 )
 
 api_router = APIRouter()
@@ -27,3 +28,4 @@ api_router.include_router(payments.router)
 api_router.include_router(payments.legacy_router)
 api_router.include_router(want.router)
 api_router.include_router(ws.router)
+api_router.include_router(ops.router)

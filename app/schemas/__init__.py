@@ -28,6 +28,8 @@ from .menu import (
 from .order import (
     AdminOrderCreateRequestSchema,
     AdminOrderResponseSchema,
+    OpsAutoCancelRequestSchema,
+    OpsAutoCancelResponseSchema,
     OrderCreateRequestSchema,
     OrderDeliveryAddressSchema,
     OrderItemCreateSchema,
@@ -63,6 +65,8 @@ __all__ = [
     "AdminLoginRequestSchema",
     "AdminOrderCreateRequestSchema",
     "AdminOrderResponseSchema",
+    "OpsAutoCancelRequestSchema",
+    "OpsAutoCancelResponseSchema",
     "AdminPaymentMatchCandidateSchema",
     "AdminPaymentMatchRequestSchema",
     "AdminPaymentMatchResponseSchema",

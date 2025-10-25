@@ -219,8 +219,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 #### 关键检查项
 - [ ] 限流已启用 (`PERF_DISABLE_HTTP_OVERHEADS` 未设置或为 0)
-- [ ] DB 连接池配置正确 (pool_size=20, max_overflow=30)
-- [ ] JWT 有效期为 7 天 (JWT_EXPIRE_MINUTES=10080)
+- [ ] DB 连接池配置正确 (`DATABASE_POOL_SIZE=20`, `DATABASE_MAX_OVERFLOW=30`)
+- [ ] JWT 有效期为 1 天 (`JWT_EXPIRE_MINUTES=1440`，如需更短请在灰度前调整)
 - [ ] Redis 连接正常 (172.21.48.1:6379)
 - [ ] 数据库迁移版本正确 (20251024_0002)
 - [ ] Prometheus 指标可访问

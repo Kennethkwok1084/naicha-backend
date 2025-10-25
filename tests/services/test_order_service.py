@@ -10,7 +10,7 @@ import pytest
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
-from app.models.orders import IdempotencyKey
+from app.models.orders import IdempotencyKey, Order
 from app.models.shop import ShopProfile
 from app.schemas import (
     OrderCreateRequestSchema,
@@ -340,3 +340,60 @@ async def test_create_order_holds_inventory_lock_until_commit(db_session) -> Non
     assert order_result["order_id"] > 0
 
     await asyncio.wait_for(update_task, timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_cancel_pending_order_restores_inventory(db_session) -> None:
+    await _seed_menu(db_session)
+    user = User(user_id=301, open_id="cancel-user")
+    db_session.add(user)
+    await db_session.flush()
+
+    service = OrderService(db_session, get_settings())
+    payload = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[])],
+        order_type="pickup",
+    )
+
+    created = await service.create_order(payload=payload, idempotency_key="idem-cancel", user=user)
+    product = await db_session.get(Product, 1)
+    assert product is not None
+    assert product.stock_quantity == 48
+
+    cancelled = await service.cancel_pending_order(created["order_id"], reason="test.manual")
+    assert cancelled is True
+
+    await db_session.refresh(product)
+    assert product.stock_quantity == 50
+
+    order_entity = await db_session.get(Order, created["order_id"])
+    assert order_entity is not None
+    assert order_entity.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_stale_pending_orders_respects_cutoff(db_session) -> None:
+    await _seed_menu(db_session)
+    user = User(user_id=302, open_id="stale-user")
+    db_session.add(user)
+    await db_session.flush()
+
+    service = OrderService(db_session, get_settings())
+    payload = OrderCreateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        order_type="pickup",
+    )
+    created = await service.create_order(payload=payload, idempotency_key="idem-stale", user=user)
+
+    order_entity = await db_session.get(Order, created["order_id"])
+    assert order_entity is not None
+    order_entity.created_at = datetime.now(tz=UTC) - timedelta(hours=2)
+    await db_session.flush()
+
+    cutoff = datetime.now(tz=UTC) - timedelta(minutes=30)
+    cancelled_ids = await service.cancel_stale_pending_orders(cutoff, limit=10)
+    assert created["order_id"] in cancelled_ids
+
+    product = await db_session.get(Product, 1)
+    assert product is not None
+    assert product.stock_quantity == 50
