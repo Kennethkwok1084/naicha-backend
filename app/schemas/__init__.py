@@ -21,6 +21,7 @@ from .inventory import (
 from .loyalty import (
     CouponSchema,
     CouponsResponseSchema,
+    CouponStatsSchema,
     LoyaltyTransactionSchema,
     LoyaltyTransactionsResponseSchema,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "AdminPaymentMatchResponseSchema",
     "CouponSchema",
     "CouponsResponseSchema",
+    "CouponStatsSchema",
     "DashboardPaymentChannelSchema",
     "DashboardResponseSchema",
     "DashboardSummarySchema",

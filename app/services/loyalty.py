@@ -185,6 +185,8 @@ class LoyaltyService:
         stats = {
             "active_count": counts.get("active", 0),
             "used_count": counts.get("used", 0),
+            "expired_count": counts.get("expired", 0),
+            "void_count": counts.get("void", 0),
             "total_count": sum(counts.values()),
         }
 

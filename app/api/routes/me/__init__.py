@@ -71,7 +71,7 @@ async def list_addresses(
 async def get_loyalty_transactions(
     current_user: User = Depends(get_current_user),
     service: LoyaltyService = Depends(get_loyalty_service),
-    limit: int = Query(default=50, ge=1, le=100, description="每页数量"),
+    limit: int = Query(default=10, ge=1, le=100, description="每页数量"),
     offset: int = Query(default=0, ge=0, description="偏移量"),
 ) -> LoyaltyTransactionsResponseSchema:
     """获取当前用户的积分明细"""
@@ -83,6 +83,7 @@ async def get_loyalty_transactions(
         transactions=[
             LoyaltyTransactionSchema(
                 id=t.id,
+                user_id=t.user_id,
                 order_id=t.order_id,
                 delta_points=t.delta_points,
                 reason=t.reason,
@@ -92,6 +93,8 @@ async def get_loyalty_transactions(
         ],
         total_count=total_count,
         current_points=current_user.loyalty_points,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -108,6 +111,7 @@ async def get_coupons(
         coupons=[
             CouponSchema(
                 coupon_id=c.coupon_id,
+                user_id=c.user_id,
                 type=c.type,
                 status=c.status,
                 meta_json=c.meta_json,
@@ -118,5 +122,5 @@ async def get_coupons(
             )
             for c in coupons
         ],
-        **stats,
+        stats=stats,
     )
