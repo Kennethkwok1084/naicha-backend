@@ -3,12 +3,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
-
 from app.core.settings import get_settings
 from app.models.accounts import Coupon, LoyaltyTransaction, User
 from app.models.orders import Order, OrderItem
 from app.services.loyalty import LoyaltyService
+from sqlalchemy import select
 
 
 @pytest.mark.asyncio

@@ -1,10 +1,9 @@
 """积分交易记录 API 测试"""
 
 import pytest
+from app.models.accounts import LoyaltyTransaction, User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.accounts import LoyaltyTransaction, User
 
 
 @pytest.mark.asyncio
@@ -82,7 +81,7 @@ async def test_get_transactions_ordered_by_date_desc(
     """测试交易记录按创建时间降序排列"""
     import time
 
-    # 创建3条记录，确保时间戳不同
+    # 创建3条记录, 确保时间戳不同
     for i, reason in enumerate(["order_paid", "coupon_grant", "coupon_use"]):
         tx = LoyaltyTransaction(
             user_id=test_user.user_id,

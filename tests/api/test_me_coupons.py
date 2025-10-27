@@ -1,12 +1,11 @@
 """优惠券列表 API 测试"""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
+from app.models.accounts import Coupon, User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.accounts import Coupon, User
 
 
 @pytest.mark.asyncio

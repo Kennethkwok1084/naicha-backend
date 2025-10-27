@@ -4,13 +4,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.accounts import Coupon, User
 from app.models.catalog import Category, Product
-from app.models.orders import Order
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
@@ -96,7 +93,7 @@ async def test_create_order_applies_coupon_discount(
     active_coupon: Coupon,
 ):
     """测试优惠券正确应用折扣"""
-    # 创建订单，单价25元，数量2，应扣除最便宜的一杯（25元）
+    # 创建订单, 单价25元, 数量2, 应扣除最便宜的一杯(25元)
     order_payload = {
         "order_type": "pickup",
         "notes": "测试折扣",
@@ -333,7 +330,7 @@ async def test_create_order_without_coupon_works(
     assert response.status_code == 201
     data = response.json()
     
-    # 原价：25 * 1 = 25
+    # 原价: 25 * 1 = 25
     assert float(data["total_price"]) == 25.0
 
 
@@ -346,7 +343,7 @@ async def test_coupon_usage_is_atomic(
     test_product: Product,
     active_coupon: Coupon,
 ):
-    """测试优惠券使用的原子性 - 如果订单创建失败，优惠券不应被使用"""
+    """测试优惠券使用的原子性 - 如果订单创建失败, 优惠券不应被使用"""
     # 使商品售罄以触发订单创建失败
     test_product.inventory_status = "sold_out"
     test_product.stock_quantity = 0
@@ -471,6 +468,6 @@ async def test_guest_user_cannot_use_coupon(
         },
     )
 
-    # 游客不能使用优惠券（因为没有 user）
+    # 游客不能使用优惠券(因为没有 user)
     # 订单创建应该失败或忽略 coupon_id
     assert response.status_code in [400, 401]
