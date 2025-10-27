@@ -27,6 +27,7 @@ class OrderCreateRequestSchema(BaseModel):
     guest_session_id: str | None = Field(default=None, max_length=80)
     scheduled_at: datetime | None = Field(default=None)
     address: OrderDeliveryAddressSchema | None = None
+    coupon_id: int | None = Field(default=None, description="使用的优惠券 ID")
 
     @field_validator("guest_session_id")
     @classmethod

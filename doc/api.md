@@ -354,6 +354,132 @@
 - **变更历史**：
   - 2025-10-10：首次发布
 
+### 获取积分交易记录
+- **状态**：新增 （日期：2025-10-27）
+- **路径/方法**：`GET /api/v1/me/loyalty/transactions`
+- **权限**：用户 JWT
+- **幂等要求**：是
+- **限流**：继承全局 SlowAPI 设置
+- **查询参数**：
+  - `limit` (可选，默认10，范围1-100): 每页返回的记录数
+  - `offset` (可选，默认0): 分页偏移量
+- **响应体**：
+```json
+{
+  "transactions": [
+    {
+      "id": 12345,
+      "user_id": 1,
+      "order_id": 9001,
+      "delta_points": 10,
+      "reason": "order_paid",
+      "created_at": "2025-10-27T10:30:00Z"
+    },
+    {
+      "id": 12344,
+      "user_id": 1,
+      "order_id": null,
+      "delta_points": -10,
+      "reason": "coupon_use",
+      "created_at": "2025-10-27T09:15:00Z"
+    }
+  ],
+  "total_count": 25,
+  "limit": 10,
+  "offset": 0
+}
+```
+- **字段说明**：
+  - `reason` 枚举值：
+    - `order_paid`: 订单支付完成获得积分
+    - `refund_rollback`: 退款回滚扣除积分
+    - `coupon_grant`: 积分兑换优惠券扣除积分
+    - `coupon_use`: 使用优惠券
+  - `delta_points`: 正数为增加积分，负数为减少积分
+  - 记录按 `created_at` 降序排列（最新的在前）
+- **错误码**：
+  - 401 未携带 Token / Token 过期 / Token 非法
+  - 422 `limit` 或 `offset` 参数不合法
+- **副作用**：无
+- **审计记录**：不记录
+- **观测指标**：待补
+- **测试清单**：
+  - [x] 正常流（含空列表、分页）
+  - [x] 权限校验
+  - [x] 参数校验（limit 范围）
+  - [x] 数据隔离（只返回当前用户记录）
+  - [ ] 性能阈值
+- **变更历史**：
+  - 2025-10-27：首次发布
+
+### 获取优惠券列表
+- **状态**：新增 （日期：2025-10-27）
+- **路径/方法**：`GET /api/v1/me/coupons`
+- **权限**：用户 JWT
+- **幂等要求**：是
+- **限流**：继承全局 SlowAPI 设置
+- **查询参数**：
+  - `status` (可选): 按状态筛选，枚举值：`active`、`used`、`expired`、`void`。不提供时返回所有状态。
+- **响应体**：
+```json
+{
+  "coupons": [
+    {
+      "coupon_id": 10001,
+      "user_id": 1,
+      "type": "free_any_drink",
+      "status": "active",
+      "meta_json": {"description": "积分兑换"},
+      "issued_at": "2025-10-27T08:00:00Z",
+      "used_at": null,
+      "used_in_order_id": null,
+      "created_at": "2025-10-27T08:00:00Z"
+    },
+    {
+      "coupon_id": 10000,
+      "user_id": 1,
+      "type": "free_any_drink",
+      "status": "used",
+      "meta_json": null,
+      "issued_at": "2025-10-26T12:00:00Z",
+      "used_at": "2025-10-26T15:30:00Z",
+      "used_in_order_id": 9001,
+      "created_at": "2025-10-26T12:00:00Z"
+    }
+  ],
+  "stats": {
+    "total_count": 5,
+    "active_count": 2,
+    "used_count": 2,
+    "expired_count": 1
+  }
+}
+```
+- **字段说明**：
+  - `type` 枚举值：
+    - `free_any_drink`: 任意饮品免单券（免除订单中最便宜的一杯）
+  - `status` 枚举值：
+    - `active`: 可用
+    - `used`: 已使用
+    - `expired`: 已过期
+    - `void`: 已作废
+  - `stats`: 当前用户优惠券的统计数据
+- **错误码**：
+  - 401 未携带 Token / Token 过期 / Token 非法
+  - 422 `status` 参数值不合法
+- **副作用**：无
+- **审计记录**：不记录
+- **观测指标**：待补
+- **测试清单**：
+  - [x] 正常流（含空列表、筛选）
+  - [x] 权限校验
+  - [x] 参数校验（status 枚举值）
+  - [x] 数据隔离（只返回当前用户优惠券）
+  - [x] 统计数据准确性
+  - [ ] 性能阈值
+- **变更历史**：
+  - 2025-10-27：首次发布
+
 ### 创建订单
 - **状态**：新增 （日期：2025-10-17）
 - **路径/方法**：`POST /api/v1/orders`
@@ -374,6 +500,7 @@
   "notes": "少冰",
   "guest_session_id": "gs_xxx",
   "scheduled_at": "2025-10-21T09:30:00+08:00",
+  "coupon_id": 12345,
   "address": {
     "contact_name": "林小白",
     "phone": "13800001234",
@@ -383,6 +510,8 @@
   }
 }
 ```
+- **请求字段说明**：
+  - `coupon_id` (可选): 优惠券ID，仅登录用户可用。使用 `free_any_drink` 类型优惠券时，自动免除订单中最便宜的一杯价格。
 - **响应体**：
 ```json
 {
@@ -416,7 +545,7 @@
 }
 ```
 - **错误码**：
-  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架 / 预约档期已满
+  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架 / 预约档期已满 / 优惠券不存在、已使用或不属于当前用户
   - 422 预约时间不合法（非当日/未在营业时间/未带时区）
   - 403 游客会话不匹配目标订单
   - 409 Idempotency-Key 与历史请求不一致
@@ -578,7 +707,7 @@
   - 401 Invalid signature. —— 回调签名校验失败
   - 404 Order not found for payment notification. —— 订单不存在或已删除
   - 409 Payment amount mismatches order total. —— 支付金额与订单不一致
-- **副作用**：写库 `payment_records`、`orders.status=paid`、补写 `print_jobs`、触发商户 WS 推送、累计会员积分（满 10 自动发放 `free_any_drink` 券）
+- **副作用**：写库 `payment_records`、`orders.status=paid`、补写 `print_jobs`、触发商户 WS 推送、累计会员积分（满 10 杯自动发放 `free_any_drink` 券）
 - **审计记录**：暂不写入
 - **观测指标**：
   - `payment_callback_total{result=success|order_not_found|conflict|unexpected_error}`

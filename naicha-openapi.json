@@ -1,0 +1,2329 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Naicha Backend",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "健康检查",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Healthz Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz/live": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Liveness Probe",
+        "operationId": "liveness_probe_healthz_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Liveness Probe Healthz Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz/ready": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness Probe",
+        "operationId": "readiness_probe_healthz_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Readiness Probe Healthz Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Prometheus 指标",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/login": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Login",
+        "operationId": "admin_login_api_v1_admin_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/orders": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "POS 快速建单",
+        "operationId": "create_pos_order_api_v1_admin_orders_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderResponseSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/payments/match": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "静态码支付匹配",
+        "operationId": "match_static_payment_api_v1_admin_payments_match_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPaymentMatchResponseSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "商家看板",
+        "operationId": "get_admin_dashboard_api_v1_admin_dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "day",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Compare"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/inventory/products/{product_id}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "更新商品库存状态",
+        "operationId": "update_product_inventory_api_v1_admin_inventory_products__product_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryProductResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/inventory/spec-options/{option_id}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "更新规格库存状态",
+        "operationId": "update_spec_option_inventory_api_v1_admin_inventory_spec_options__option_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "option_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Option Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventorySpecOptionResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/want/stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "想要统计概览",
+        "operationId": "get_want_stats_api_v1_admin_want_stats_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WantStatsResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/login": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "User Login",
+        "operationId": "user_login_api_v1_users_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLoginRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLoginResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guests/session": {
+      "post": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "创建或续期游客会话",
+        "operationId": "create_guest_session_api_v1_guests_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestSessionCreateRequestSchema",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestSessionResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/profile": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "获取当前用户资料",
+        "operationId": "get_profile_api_v1_me_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/addresses": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "获取地址簿",
+        "operationId": "list_addresses_api_v1_me_addresses_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAddressSchema"
+                  },
+                  "type": "array",
+                  "title": "Response List Addresses Api V1 Me Addresses Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/menu": {
+      "get": {
+        "tags": [
+          "menu"
+        ],
+        "summary": "获取菜单",
+        "operationId": "fetch_menu_api_v1_menu_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MenuResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shop/status": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "获取门店状态",
+        "operationId": "shop_status_api_v1_shop_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShopStatusSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shop/delivery/check": {
+      "post": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "检查地址是否在配送范围",
+        "operationId": "delivery_check_api_v1_shop_delivery_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryCheckRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryCheckResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "创建订单",
+        "operationId": "create_order_api_v1_orders_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponseSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/orders/{order_id}/pay/jsapi": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "发起微信 JSAPI 支付",
+        "operationId": "initiate_jsapi_payment_api_v1_orders__order_id__pay_jsapi_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderPaymentInitiateResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{order_id}/pay/native": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "发起微信 Native 支付",
+        "operationId": "initiate_native_payment_api_v1_orders__order_id__pay_native_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderPaymentInitiateResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/notify/wechat": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "微信支付回调",
+        "operationId": "wechat_payment_notify_api_v1_payments_notify_wechat_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentNotifyResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{product_id}/want": {
+      "post": {
+        "tags": [
+          "want"
+        ],
+        "summary": "提交想要记录",
+        "operationId": "create_want_event_api_v1_products__product_id__want_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WantRecordResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/orders/auto-cancel": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "手动触发待支付订单自动取消",
+        "operationId": "trigger_auto_cancel_orders_api_v1_ops_orders_auto_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsAutoCancelRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsAutoCancelResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminLoginRequestSchema": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "AdminLoginRequestSchema"
+      },
+      "AdminOrderResponseSchema": {
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "title": "Order Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "payment_status": {
+            "type": "string",
+            "title": "Payment Status"
+          },
+          "payment_channel": {
+            "type": "string",
+            "title": "Payment Channel"
+          },
+          "total_price": {
+            "type": "number",
+            "title": "Total Price"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "print_job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Print Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "order_number",
+          "status",
+          "payment_status",
+          "payment_channel",
+          "total_price",
+          "created_at"
+        ],
+        "title": "AdminOrderResponseSchema"
+      },
+      "AdminPaymentMatchResponseSchema": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "matched",
+            "title": "Status"
+          },
+          "payment_record_id": {
+            "type": "integer",
+            "title": "Payment Record Id"
+          },
+          "order_id": {
+            "type": "integer",
+            "title": "Order Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "payment_channel": {
+            "type": "string",
+            "title": "Payment Channel"
+          },
+          "payment_status": {
+            "type": "string",
+            "title": "Payment Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "payment_record_id",
+          "order_id",
+          "order_number",
+          "payment_channel",
+          "payment_status"
+        ],
+        "title": "AdminPaymentMatchResponseSchema"
+      },
+      "DashboardPaymentChannelSchema": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "order_count": {
+            "type": "integer",
+            "title": "Order Count"
+          },
+          "gross_sales": {
+            "type": "number",
+            "title": "Gross Sales"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "order_count",
+          "gross_sales"
+        ],
+        "title": "DashboardPaymentChannelSchema"
+      },
+      "DashboardResponseSchema": {
+        "properties": {
+          "range": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "Range"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DashboardSummarySchema"
+          },
+          "trend": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTrendPointSchema"
+            },
+            "type": "array",
+            "title": "Trend"
+          },
+          "top_products": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTopProductSchema"
+            },
+            "type": "array",
+            "title": "Top Products"
+          },
+          "payment_channel_split": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardPaymentChannelSchema"
+            },
+            "type": "array",
+            "title": "Payment Channel Split"
+          },
+          "compare_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "range",
+          "summary",
+          "trend",
+          "top_products",
+          "payment_channel_split"
+        ],
+        "title": "DashboardResponseSchema"
+      },
+      "DashboardSummarySchema": {
+        "properties": {
+          "gross_sales": {
+            "type": "number",
+            "title": "Gross Sales",
+            "default": 0
+          },
+          "order_count": {
+            "type": "integer",
+            "title": "Order Count",
+            "default": 0
+          },
+          "avg_ticket": {
+            "type": "number",
+            "title": "Avg Ticket",
+            "default": 0
+          },
+          "refund_amount": {
+            "type": "number",
+            "title": "Refund Amount",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DashboardSummarySchema"
+      },
+      "DashboardTopProductSchema": {
+        "properties": {
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "gross_sales": {
+            "type": "number",
+            "title": "Gross Sales"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "quantity",
+          "gross_sales"
+        ],
+        "title": "DashboardTopProductSchema"
+      },
+      "DashboardTrendPointSchema": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "gross_sales": {
+            "type": "number",
+            "title": "Gross Sales"
+          },
+          "order_count": {
+            "type": "integer",
+            "title": "Order Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "gross_sales",
+          "order_count"
+        ],
+        "title": "DashboardTrendPointSchema"
+      },
+      "DeliveryCheckRequestSchema": {
+        "properties": {
+          "lat": {
+            "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lng"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "title": "DeliveryCheckRequestSchema"
+      },
+      "DeliveryCheckResponseSchema": {
+        "properties": {
+          "deliverable": {
+            "type": "boolean",
+            "title": "Deliverable"
+          },
+          "distance_m": {
+            "type": "number",
+            "title": "Distance M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deliverable",
+          "distance_m"
+        ],
+        "title": "DeliveryCheckResponseSchema"
+      },
+      "GuestSessionCreateRequestSchema": {
+        "properties": {
+          "session_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Token"
+          }
+        },
+        "type": "object",
+        "title": "GuestSessionCreateRequestSchema"
+      },
+      "GuestSessionResponseSchema": {
+        "properties": {
+          "guest_session_id": {
+            "type": "string",
+            "title": "Guest Session Id"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_session_id",
+          "expires_at"
+        ],
+        "title": "GuestSessionResponseSchema"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InventoryProductResponseSchema": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "inventory_status": {
+            "type": "string",
+            "enum": [
+              "in_stock",
+              "sold_out"
+            ],
+            "title": "Inventory Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "inventory_status",
+          "updated_at"
+        ],
+        "title": "InventoryProductResponseSchema"
+      },
+      "InventorySpecOptionResponseSchema": {
+        "properties": {
+          "spec_option_id": {
+            "type": "integer",
+            "title": "Spec Option Id"
+          },
+          "inventory_status": {
+            "type": "string",
+            "enum": [
+              "in_stock",
+              "sold_out"
+            ],
+            "title": "Inventory Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec_option_id",
+          "inventory_status",
+          "updated_at"
+        ],
+        "title": "InventorySpecOptionResponseSchema"
+      },
+      "MenuCategorySchema-Input": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/MenuProductSchema-Input"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "sort_order",
+          "products"
+        ],
+        "title": "MenuCategorySchema"
+      },
+      "MenuCategorySchema-Output": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/MenuProductSchema-Output"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "sort_order",
+          "products"
+        ],
+        "title": "MenuCategorySchema"
+      },
+      "MenuProductSchema-Input": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "inventory_status": {
+            "type": "string",
+            "title": "Inventory Status"
+          },
+          "spec_groups": {
+            "items": {
+              "$ref": "#/components/schemas/MenuSpecGroupSchema"
+            },
+            "type": "array",
+            "title": "Spec Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "description",
+          "image_url",
+          "base_price",
+          "status",
+          "inventory_status",
+          "spec_groups"
+        ],
+        "title": "MenuProductSchema"
+      },
+      "MenuProductSchema-Output": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "inventory_status": {
+            "type": "string",
+            "title": "Inventory Status"
+          },
+          "spec_groups": {
+            "items": {
+              "$ref": "#/components/schemas/MenuSpecGroupSchema"
+            },
+            "type": "array",
+            "title": "Spec Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "description",
+          "image_url",
+          "base_price",
+          "status",
+          "inventory_status",
+          "spec_groups"
+        ],
+        "title": "MenuProductSchema"
+      },
+      "MenuResponseSchema": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/MenuCategorySchema-Output"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "uncategorized_products": {
+            "items": {
+              "$ref": "#/components/schemas/MenuProductSchema-Output"
+            },
+            "type": "array",
+            "title": "Uncategorized Products"
+          },
+          "multi_category_enabled": {
+            "type": "boolean",
+            "title": "Multi Category Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "categories",
+          "uncategorized_products",
+          "multi_category_enabled"
+        ],
+        "title": "MenuResponseSchema"
+      },
+      "MenuSpecGroupSchema": {
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "title": "Group Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/MenuSpecOptionSchema"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_id",
+          "name",
+          "sort_order",
+          "options"
+        ],
+        "title": "MenuSpecGroupSchema"
+      },
+      "MenuSpecOptionSchema": {
+        "properties": {
+          "option_id": {
+            "type": "integer",
+            "title": "Option Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "price_modifier": {
+            "type": "number",
+            "title": "Price Modifier"
+          },
+          "inventory_status": {
+            "type": "string",
+            "title": "Inventory Status"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "option_id",
+          "name",
+          "price_modifier",
+          "inventory_status",
+          "sort_order"
+        ],
+        "title": "MenuSpecOptionSchema"
+      },
+      "OpsAutoCancelRequestSchema": {
+        "properties": {
+          "cutoff_minutes": {
+            "type": "integer",
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Cutoff Minutes",
+            "default": 30
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 100
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "OpsAutoCancelRequestSchema"
+      },
+      "OpsAutoCancelResponseSchema": {
+        "properties": {
+          "cancelled_order_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Cancelled Order Ids"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "cutoff_iso": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Cutoff Iso"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "http",
+              "celery",
+              "cron"
+            ],
+            "title": "Source"
+          },
+          "operator_admin_id": {
+            "type": "integer",
+            "title": "Operator Admin Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cancelled_order_ids",
+          "count",
+          "cutoff_iso",
+          "source",
+          "operator_admin_id"
+        ],
+        "title": "OpsAutoCancelResponseSchema"
+      },
+      "OrderItemSchema": {
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "type": "number",
+            "title": "Unit Price"
+          },
+          "selected_specs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Selected Specs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_id",
+          "product_id",
+          "product_name",
+          "quantity",
+          "unit_price",
+          "selected_specs"
+        ],
+        "title": "OrderItemSchema"
+      },
+      "OrderPaymentInitiateResponseSchema": {
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "title": "Order Id"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "channel",
+          "payload"
+        ],
+        "title": "OrderPaymentInitiateResponseSchema"
+      },
+      "OrderResponseSchema": {
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "title": "Order Id"
+          },
+          "order_number": {
+            "type": "string",
+            "title": "Order Number"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "order_type": {
+            "type": "string",
+            "title": "Order Type"
+          },
+          "total_price": {
+            "type": "number",
+            "title": "Total Price"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "is_scheduled": {
+            "type": "boolean",
+            "title": "Is Scheduled"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "reminder_sent_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Sent At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderItemSchema"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "order_number",
+          "status",
+          "order_type",
+          "total_price",
+          "created_at",
+          "is_scheduled",
+          "scheduled_at",
+          "reminder_sent_at",
+          "items"
+        ],
+        "title": "OrderResponseSchema"
+      },
+      "PaymentNotifyResponseSchema": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "PaymentNotifyResponseSchema"
+      },
+      "ShopFeaturesSchema": {
+        "properties": {
+          "multi_category_enabled": {
+            "type": "boolean",
+            "title": "Multi Category Enabled"
+          },
+          "reservation_enabled": {
+            "type": "boolean",
+            "title": "Reservation Enabled"
+          },
+          "want_enabled": {
+            "type": "boolean",
+            "title": "Want Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "multi_category_enabled",
+          "reservation_enabled",
+          "want_enabled"
+        ],
+        "title": "ShopFeaturesSchema"
+      },
+      "ShopLocationSchema": {
+        "properties": {
+          "lat": {
+            "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lng"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "title": "ShopLocationSchema"
+      },
+      "ShopStatusSchema": {
+        "properties": {
+          "is_open": {
+            "type": "boolean",
+            "title": "Is Open"
+          },
+          "delivery_radius_m": {
+            "type": "integer",
+            "title": "Delivery Radius M"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "open_hours": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Hours"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShopLocationSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "features": {
+            "$ref": "#/components/schemas/ShopFeaturesSchema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_open",
+          "delivery_radius_m",
+          "timezone",
+          "features"
+        ],
+        "title": "ShopStatusSchema"
+      },
+      "TokenSchema": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token"
+        ],
+        "title": "TokenSchema"
+      },
+      "UserAddressSchema": {
+        "properties": {
+          "address_id": {
+            "type": "integer",
+            "title": "Address Id"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "address_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "address_id",
+          "contact_name",
+          "phone",
+          "address_line",
+          "lat",
+          "lng",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserAddressSchema"
+      },
+      "UserLoginRequestSchema": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "UserLoginRequestSchema"
+      },
+      "UserLoginResponseSchema": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserSummarySchema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "user"
+        ],
+        "title": "UserLoginResponseSchema"
+      },
+      "UserProfileSchema": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "loyalty_points": {
+            "type": "integer",
+            "title": "Loyalty Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "nickname",
+          "avatar_url",
+          "loyalty_points"
+        ],
+        "title": "UserProfileSchema"
+      },
+      "UserSummarySchema": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "loyalty_points": {
+            "type": "integer",
+            "title": "Loyalty Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "nickname",
+          "avatar_url",
+          "loyalty_points"
+        ],
+        "title": "UserSummarySchema"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WantDailyPointSchema": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Date"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "count"
+        ],
+        "title": "WantDailyPointSchema"
+      },
+      "WantRecordResponseSchema": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "guest"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "created_at",
+          "source"
+        ],
+        "title": "WantRecordResponseSchema"
+      },
+      "WantStatsResponseSchema": {
+        "properties": {
+          "range": {
+            "type": "string",
+            "title": "Range"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "top_products": {
+            "items": {
+              "$ref": "#/components/schemas/WantTopProductSchema"
+            },
+            "type": "array",
+            "title": "Top Products"
+          },
+          "daily_series": {
+            "items": {
+              "$ref": "#/components/schemas/WantDailyPointSchema"
+            },
+            "type": "array",
+            "title": "Daily Series"
+          }
+        },
+        "type": "object",
+        "required": [
+          "range",
+          "start",
+          "end",
+          "top_products",
+          "daily_series"
+        ],
+        "title": "WantStatsResponseSchema"
+      },
+      "WantTopProductSchema": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "total"
+        ],
+        "title": "WantTopProductSchema"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
