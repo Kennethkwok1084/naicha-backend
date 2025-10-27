@@ -6,11 +6,11 @@ import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from redis.asyncio import Redis, from_url
 from redis.asyncio.lock import Lock as RedisLock
 from redis.exceptions import RedisError
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from structlog import get_logger
 
 from app.core.settings import get_settings

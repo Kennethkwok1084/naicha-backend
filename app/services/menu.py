@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
+import json
 import time
 from collections import defaultdict
 from threading import Lock
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from redis.asyncio import Redis, from_url
 from redis.exceptions import RedisError
@@ -30,26 +32,33 @@ logger = get_logger(__name__)
 _MENU_CACHE: dict[str, tuple[float, int | None, dict[str, Any]]] = {}
 
 _MENU_VERSION_KEY = "menu:version"
+_MENU_PAYLOAD_KEY = "menu:payload"
 _menu_version_lock = Lock()
-_menu_version_client: Redis | None = None
+_MENU_VERSION_CLIENTS: WeakKeyDictionary[Any, Redis] = WeakKeyDictionary()
 _menu_version_disabled = False
 
 
 def _disable_menu_version_tracking() -> None:
-    global _menu_version_disabled, _menu_version_client
+    global _menu_version_disabled, _MENU_VERSION_CLIENTS
     _menu_version_disabled = True
-    _menu_version_client = None
+    _MENU_VERSION_CLIENTS = WeakKeyDictionary()
 
 
 def _get_version_client(settings: Settings) -> Redis | None:
-    global _menu_version_client
+    global _MENU_VERSION_CLIENTS
     if _menu_version_disabled:
         return None
-    client = _menu_version_client
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # pragma: no cover - 理论上不会触发
+        loop = None
+    if loop is None:
+        return None
+    client = _MENU_VERSION_CLIENTS.get(loop)
     if client is not None:
         return client
     with _menu_version_lock:
-        client = _menu_version_client
+        client = _MENU_VERSION_CLIENTS.get(loop)
         if client is not None:
             return client
         try:
@@ -58,7 +67,7 @@ def _get_version_client(settings: Settings) -> Redis | None:
             logger.warning("menu.cache.version_client_init_failed", error=str(exc))
             _disable_menu_version_tracking()
             return None
-        _menu_version_client = client
+        _MENU_VERSION_CLIENTS[loop] = client
         return client
 
 
@@ -94,6 +103,66 @@ async def _bump_remote_menu_version(settings: Settings) -> None:
         _disable_menu_version_tracking()
 
 
+async def _delete_remote_menu_payload(settings: Settings) -> None:
+    client = _get_version_client(settings)
+    if client is None:
+        return
+    try:
+        await client.delete(_MENU_PAYLOAD_KEY)
+    except RedisError as exc:
+        logger.warning("menu.cache.remote_delete_failed", error=str(exc))
+        _disable_menu_version_tracking()
+
+
+async def _write_remote_menu_payload(
+    settings: Settings,
+    payload: dict[str, Any],
+    *,
+    version: int | None,
+    ttl_seconds: int,
+) -> None:
+    client = _get_version_client(settings)
+    if client is None:
+        return
+    data = {
+        "version": version or 0,
+        "payload": payload,
+    }
+    try:
+        await client.set(
+            _MENU_PAYLOAD_KEY,
+            json.dumps(data),
+            ex=max(ttl_seconds, 1),
+        )
+    except (RedisError, TypeError) as exc:
+        logger.warning("menu.cache.remote_write_failed", error=str(exc))
+        _disable_menu_version_tracking()
+
+
+async def _read_remote_menu_payload(settings: Settings) -> tuple[int, dict[str, Any]] | None:
+    client = _get_version_client(settings)
+    if client is None:
+        return None
+    try:
+        raw_value = await client.get(_MENU_PAYLOAD_KEY)
+    except RedisError as exc:
+        logger.warning("menu.cache.remote_read_failed", error=str(exc))
+        _disable_menu_version_tracking()
+        return None
+    if raw_value is None:
+        return None
+    try:
+        data = json.loads(raw_value)
+        version = int(data.get("version", 0))
+        payload = data.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        return version, payload
+    except (ValueError, TypeError, json.JSONDecodeError):
+        logger.warning("menu.cache.remote_payload_invalid")
+        return None
+
+
 async def _resolve_maybe_awaitable(value):
     if inspect.isawaitable(value):
         return await value
@@ -105,6 +174,7 @@ def invalidate_menu_cache(settings: Settings | None = None) -> None:
     active_settings = settings or get_settings()
 
     async def _bump_async() -> None:
+        await _resolve_maybe_awaitable(_delete_remote_menu_payload(active_settings))
         await _resolve_maybe_awaitable(_bump_remote_menu_version(active_settings))
 
     try:
@@ -112,7 +182,13 @@ def invalidate_menu_cache(settings: Settings | None = None) -> None:
     except RuntimeError:
         asyncio.run(_bump_async())
     else:
-        _ = loop.create_task(_bump_async())  # Fire and forget background task
+        task = loop.create_task(_bump_async())  # Fire and forget background task
+        # 保持对task的引用避免被垃圾回收,但不等待结果
+        _background_tasks = getattr(loop, '_menu_bump_tasks', set())
+        if not hasattr(loop, '_menu_bump_tasks'):
+            loop._menu_bump_tasks = _background_tasks  # type: ignore
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
 
 class MenuService:
@@ -259,17 +335,26 @@ class MenuService:
     async def _load_from_cache(self) -> dict[str, Any] | None:
         entry = _MENU_CACHE.get(self.CACHE_KEY)
         if not entry:
+            remote_payload = await self._hydrate_from_remote_cache()
+            if remote_payload is not None:
+                return remote_payload
             record_cache_miss()
             return None
         expires_at, cached_version, payload = entry
         if expires_at < time.time():
             _MENU_CACHE.pop(self.CACHE_KEY, None)
+            remote_payload = await self._hydrate_from_remote_cache()
+            if remote_payload is not None:
+                return remote_payload
             record_cache_miss()
             return None
 
         remote_version = await self._fetch_remote_version()
         if remote_version is not None and cached_version != remote_version:
             _MENU_CACHE.pop(self.CACHE_KEY, None)
+            remote_payload = await self._hydrate_from_remote_cache()
+            if remote_payload is not None:
+                return remote_payload
             record_cache_miss()
             return None
 
@@ -283,6 +368,25 @@ class MenuService:
         if version is None:
             version = await self._fetch_remote_version()
         _MENU_CACHE[self.CACHE_KEY] = (expires_at, version, payload)
+        await _resolve_maybe_awaitable(
+            _write_remote_menu_payload(
+                self._settings,
+                payload,
+                version=version,
+                ttl_seconds=ttl or self._settings.menu_cache_ttl_seconds,
+            )
+        )
+
+    async def _hydrate_from_remote_cache(self) -> dict[str, Any] | None:
+        remote = await _resolve_maybe_awaitable(_read_remote_menu_payload(self._settings))
+        if not remote:
+            return None
+        version, payload = remote
+        ttl = max(self._settings.menu_cache_ttl_seconds, 0)
+        expires_at = time.time() + ttl
+        _MENU_CACHE[self.CACHE_KEY] = (expires_at, version, payload)
+        record_cache_hit()
+        return payload
 
     async def _fetch_remote_version(self) -> int | None:
         version = await _resolve_maybe_awaitable(_read_remote_menu_version(self._settings))

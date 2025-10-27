@@ -23,6 +23,14 @@ async def test_alembic_upgrade_and_downgrade_cycle() -> None:
 
     test_async_url = base_async_url.set(database=TEST_DB_NAME)
     test_sync_url = base_sync_url.set(database=TEST_DB_NAME, drivername="postgresql")
+    
+    # 确保同步 URL 也携带 sslmode 参数(与异步 URL 保持一致)
+    if "sslmode=" in str(base_async_url) and "sslmode=" not in str(test_sync_url):
+        # 从异步 URL 提取 sslmode
+        async_query = base_async_url.query
+        if "sslmode" in async_query:
+            sslmode = async_query["sslmode"]
+            test_sync_url = test_sync_url.update_query_dict({"sslmode": sslmode})
 
     original_database_url = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = str(test_async_url)

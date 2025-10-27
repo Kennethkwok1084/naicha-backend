@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import ClassVar
 
 from sqlalchemy import (
     Boolean,
@@ -54,6 +55,11 @@ class Order(Base, TimestampMixin):
         ForeignKey("reservation_slots.slot_id", ondelete="SET NULL"),
         nullable=True,
     )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -77,6 +83,7 @@ class Order(Base, TimestampMixin):
             name="ck_orders_source",
         ),
     )
+    __mapper_args__: ClassVar[dict[str, str]] = {"version_id_col": version}
 
 
 Index("ix_orders_status_created", Order.status, Order.created_at.desc())

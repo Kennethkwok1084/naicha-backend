@@ -73,6 +73,11 @@ class Settings(BaseSettings):
 
     menu_cache_ttl_seconds: int = Field(default=240, alias="MENU_CACHE_TTL_SECONDS")
     merchant_ws_recent_minutes: int = Field(default=5, alias="MERCHANT_WS_RECENT_MINUTES")
+    merchant_ws_buffer_size: int = Field(default=200, alias="MERCHANT_WS_BUFFER_SIZE")
+    merchant_ws_send_timeout_seconds: float = Field(
+        default=1.0,
+        alias="MERCHANT_WS_SEND_TIMEOUT_SECONDS",
+    )
 
     celery_broker_url: str = Field(default="redis://localhost:6379/0", alias="CELERY_BROKER_URL")
     celery_result_backend: str | None = Field(default=None, alias="CELERY_RESULT_BACKEND")

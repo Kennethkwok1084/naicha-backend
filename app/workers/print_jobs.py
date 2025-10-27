@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 from sqlalchemy import and_, case, or_, select
@@ -14,7 +15,8 @@ from app.metrics.print_jobs import (
     PRINT_JOB_RETRY_COUNT,
     PRINT_JOB_TOTAL,
 )
-from app.models.orders import Order, OrderItem, PrintJob
+from app.models.orders import AuditLog, Order, OrderItem, PrintJob
+from app.ws.manager import merchant_notifier
 
 logger = get_logger(__name__)
 
@@ -49,14 +51,21 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             job.status = "failed"
             job.last_error = f"达到最大重试次数 {current_settings.print_retry_max}"
             job.next_try_at = None
-            await session.commit()
+            order = await session.get(Order, job.order_id) if job.order_id else None
+            order_snapshot = _serialize_order_snapshot(order)
+            await _finalize_permanent_failure(
+                session,
+                job,
+                order_snapshot=order_snapshot,
+                reason=job.last_error or "print retry limit reached",
+                metric_label="retry_limit",
+            )
             logger.error(
                 "print_job.retry_limit_reached",
                 job_id=job.job_id,
                 try_count=job.try_count,
                 retry_max=current_settings.print_retry_max,
             )
-            PRINT_JOB_TOTAL.labels(result="retry_limit").inc()
             raise NonRetryablePrintJobError(job.last_error)
 
         job.status = "processing"
@@ -69,8 +78,14 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
         if order is None:
             job.status = "failed"
             job.last_error = "关联订单不存在"
-            await session.commit()
-            PRINT_JOB_TOTAL.labels(result="missing_order").inc()
+            order_snapshot = _serialize_order_snapshot(order)
+            await _finalize_permanent_failure(
+                session,
+                job,
+                order_snapshot=order_snapshot,
+                reason=job.last_error,
+                metric_label="missing_order",
+            )
             raise NonRetryablePrintJobError("关联订单不存在")
 
         items = await _load_order_items(session, order.order_id)
@@ -82,9 +97,15 @@ async def execute_print_job(job_id: int, settings: Settings | None = None) -> No
             job.status = "failed"
             job.last_error = str(exc)
             job.next_try_at = None
-            await session.commit()
+            order_snapshot = _serialize_order_snapshot(order)
+            await _finalize_permanent_failure(
+                session,
+                job,
+                order_snapshot=order_snapshot,
+                reason=job.last_error,
+                metric_label="non_retryable_failure",
+            )
             logger.error("print_job.permanent_failure", job_id=job.job_id, error=job.last_error)
-            PRINT_JOB_TOTAL.labels(result="non_retryable_failure").inc()
         except RetryablePrintJobError as exc:
             job.status = "failed"
             job.last_error = str(exc)
@@ -269,3 +290,85 @@ class PrinterGateway:
                 for item in items
             ],
         }
+
+
+def _serialize_order_snapshot(order: Order | None) -> dict[str, Any] | None:
+    if order is None:
+        return None
+    return {
+        "order_id": order.order_id,
+        "order_number": order.order_number,
+        "status": order.status,
+        "total_price": float(order.total_price or 0),
+    }
+
+
+def _job_snapshot(job: PrintJob) -> dict[str, Any]:
+    return {
+        "job_id": job.job_id,
+        "order_id": job.order_id,
+        "status": job.status,
+        "try_count": job.try_count,
+        "last_error": job.last_error,
+    }
+
+
+async def _record_print_failure_audit(
+    session,
+    job: PrintJob,
+    order_snapshot: dict[str, Any] | None,
+    reason: str,
+) -> None:
+    audit = AuditLog(
+        actor_type="system",
+        actor_admin_id=None,
+        actor_user_id=None,
+        action="system.print_job_failed",
+        target_table="print_jobs",
+        target_id=str(job.job_id),
+        before_json=None,
+        after_json={
+            "job": _job_snapshot(job),
+            "order": order_snapshot,
+            "error": reason,
+        },
+        ip=None,
+        user_agent=None,
+    )
+    session.add(audit)
+    await session.flush()
+
+
+async def _broadcast_print_failure(
+    order_snapshot: dict[str, Any] | None,
+    job: PrintJob,
+    reason: str,
+) -> None:
+    payload = {
+        "type": "print_job.failed",
+        "job": _job_snapshot(job),
+        "order": order_snapshot,
+        "error": reason,
+    }
+    try:
+        await merchant_notifier.broadcast(payload)
+    except Exception as exc:  # pragma: no cover - 广播失败仅日志
+        logger.warning(
+            "print_job.failure_broadcast_failed",
+            job_id=job.job_id,
+            error=str(exc),
+        )
+
+
+async def _finalize_permanent_failure(
+    session,
+    job: PrintJob,
+    *,
+    order_snapshot: dict[str, Any] | None,
+    reason: str,
+    metric_label: str,
+) -> None:
+    await _record_print_failure_audit(session, job, order_snapshot, reason)
+    await session.commit()
+    PRINT_JOB_TOTAL.labels(result=metric_label).inc()
+    await _broadcast_print_failure(order_snapshot, job, reason)

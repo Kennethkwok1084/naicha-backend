@@ -71,6 +71,6 @@ legacy_router.add_api_route(
     wechat_payment_notify,
     methods=["POST"],
     response_model=PaymentNotifyResponseSchema,
-    summary="微信支付回调（兼容旧路径）",
+    summary="微信支付回调(兼容旧路径)",
     include_in_schema=False,
 )

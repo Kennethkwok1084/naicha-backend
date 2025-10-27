@@ -255,6 +255,9 @@ async def test_payment_notification_creates_single_print_job(
 ) -> None:
     session_factory = async_sessionmaker(model_test_engine, expire_on_commit=False)
 
+    if model_test_engine.dialect.name == "sqlite":
+        pytest.skip("SQLite 无法可靠模拟并发打印队列。")
+
     async with session_factory() as setup_session:
         async with setup_session.begin():
             order = Order(

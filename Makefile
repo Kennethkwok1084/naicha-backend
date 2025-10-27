@@ -2,7 +2,7 @@ PYTHON ?= python
 POETRY ?= poetry
 UVICORN ?= uvicorn
 
-.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker perf-locust perf-ws diag-payment
+.PHONY: install install-dev fmt lint test dev migrate updb compose-up compose-down coverage contract-test worker perf-locust perf-ws diag-payment seed-data seed-clean seed-dev seed-perf
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -79,3 +79,40 @@ perf-baseline:
 	@$(PYTHON) infra/perf/parse_results.py --input ./perf_results --baseline ./doc/perf-baseline.md
 	@echo ""
 	@echo "✅ 完成！查看报告: open perf_results/locust_*.html"
+
+seed-data:
+	@echo "=========================================="
+	@echo "创建完整测试数据"
+	@echo "=========================================="
+	@$(PYTHON) scripts/seed_test_data.py
+	@echo ""
+	@echo "✅ 测试数据创建完成！"
+
+seed-clean:
+	@echo "=========================================="
+	@echo "清空并重新创建测试数据"
+	@echo "=========================================="
+	@$(PYTHON) scripts/seed_test_data.py --clean
+	@echo ""
+	@echo "✅ 测试数据已重置！"
+
+seed-dev:
+	@echo "=========================================="
+	@echo "创建开发环境管理员账号"
+	@echo "=========================================="
+	@if [ -z "$$NAICHA_DEV_ADMIN_HASH" ]; then \
+		echo "❌ 请设置 NAICHA_DEV_ADMIN_HASH 环境变量"; \
+		echo "   示例: export NAICHA_DEV_ADMIN_HASH='$$2b$$12$$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYvZt5UbQfq'"; \
+		exit 1; \
+	fi
+	@$(PYTHON) scripts/seed_dev.py
+	@echo ""
+	@echo "✅ 管理员账号创建完成！"
+
+seed-perf:
+	@echo "=========================================="
+	@echo "创建性能测试数据"
+	@echo "=========================================="
+	@$(PYTHON) scripts/seed_perf_data.py
+	@echo ""
+	@echo "✅ 性能测试数据创建完成！"

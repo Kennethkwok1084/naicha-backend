@@ -14,11 +14,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.exc import UnmappedInstanceError
+from sqlalchemy.orm.exc import StaleDataError, UnmappedInstanceError
 from structlog import get_logger
 
 from app.core.settings import Settings
 from app.metrics.payments import (
+    PAYMENT_CALLBACK_DUPLICATE_TOTAL,
     PAYMENT_CALLBACK_LATENCY_MS,
     PAYMENT_CALLBACK_TOTAL,
 )
@@ -107,32 +108,18 @@ class PaymentService:
                 self._ensure_amount_matches(order, payload.amount, payload.currency)
 
                 status_changed = order.status != "paid"
+                payment_status_changed = order.payment_status != "paid"
                 now_utc = datetime.now(tz=UTC)
 
-                update_values: dict[str, Any] = {"payment_status": "paid"}
+                if payment_status_changed:
+                    order.payment_status = "paid"
                 if status_changed:
-                    update_values["status"] = "paid"
-                    update_values["updated_at"] = now_utc
+                    order.status = "paid"
+                    order.updated_at = now_utc
                     dispatch_order_id = order.order_id
                     should_dispatch_side_effects = True
                 if order.payment_channel is None:
-                    update_values["payment_channel"] = payload.channel
-
-                updated_order_row = await self._session.execute(
-                    update(Order)
-                    .where(Order.order_id == order.order_id)
-                    .values(**update_values)
-                    .returning(
-                        Order.order_id,
-                        Order.order_number,
-                        Order.total_price,
-                        Order.status,
-                        Order.payment_status,
-                        Order.payment_channel,
-                        Order.updated_at,
-                    )
-                )
-                updated_order = updated_order_row.one()
+                    order.payment_channel = payload.channel
 
                 payment_record_stmt = self._build_payment_record_insert(
                     order_id=order.order_id,
@@ -142,6 +129,7 @@ class PaymentService:
                 record_result = await self._session.execute(payment_record_stmt)
                 record_inserted = getattr(record_result, "rowcount", 0) > 0
                 if not record_inserted:
+                    PAYMENT_CALLBACK_DUPLICATE_TOTAL.labels(channel=payload.channel).inc()
                     logger.info(
                         "payment.notification_replayed",
                         order_number=payload.order_number,
@@ -243,7 +231,10 @@ class PaymentService:
                         order_id=order.order_id,
                         record=payload.transaction_id,
                     )
-                await self._session.flush()
+                try:
+                    await self._session.flush()
+                except StaleDataError as exc:  # pragma: no cover - 乐观锁冲突
+                    raise PaymentConflictError("Order state updated concurrently.") from exc
 
                 if job_candidate is not None and job_candidate.job_id is not None:
                     job_to_enqueue = job_candidate.job_id
@@ -292,6 +283,9 @@ class PaymentService:
             .outerjoin(PrintJob, PrintJob.order_id == Order.order_id)
             .where(Order.order_number == order_number)
         )
+        bind = self._session.get_bind()
+        if bind is not None and getattr(bind.dialect, "name", "") != "sqlite":
+            stmt = stmt.with_for_update(of=Order)
         result = await self._session.execute(stmt)
         row = result.first()
         if row is None:

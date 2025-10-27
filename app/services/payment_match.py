@@ -129,7 +129,6 @@ class PaymentMatchService:
     ) -> AdminPaymentMatchResponseSchema:
         """执行实际的匹配逻辑 (已在分布式锁保护下)。"""
 
-        broadcast_payload: dict[str, Any] | None = None
         job_to_enqueue: int | None = None
         should_dispatch_side_effects = False
         dispatch_order_id: int | None = None
@@ -219,7 +218,7 @@ class PaymentMatchService:
 
             await self._session.flush()
 
-            broadcast_payload = self._build_broadcast_payload(order)
+            # broadcast_payload 在后续流程中通过 order 重新构建,此处不需要预先创建
             should_dispatch_side_effects = True
             dispatch_order_id = order.order_id
             PAYMENT_MATCH_ATTEMPT_TOTAL.labels(result="matched").inc()

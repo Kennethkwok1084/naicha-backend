@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -55,7 +56,7 @@ async def test_merchant_ws_offline_snapshot(db_session) -> None:
     token = create_access_token(subject=str(admin.admin_id), scope=TokenScope.ADMIN)
     websocket = StubWebSocket(token)
 
-    # merchant_ws_gateway 现在使用依赖注入获取 session，不接受参数
+    # merchant_ws_gateway 现在使用依赖注入获取 session,不接受参数
     await merchant_ws_gateway(websocket)
 
     assert websocket.accepted is True
@@ -72,7 +73,7 @@ async def test_merchant_ws_missing_token_results_close(db_session) -> None:
     websocket = StubWebSocket(token="")
     websocket.query_params = {}
 
-    # merchant_ws_gateway 现在使用依赖注入，不接受 session 参数
+    # merchant_ws_gateway 现在使用依赖注入,不接受 session 参数
     await merchant_ws_gateway(websocket)
 
     assert websocket.accepted is False
@@ -91,6 +92,7 @@ async def test_merchant_notifier_broadcasts_to_multiple_connections() -> None:
 
     try:
         await merchant_notifier.broadcast(message)
+        await asyncio.sleep(0)
         assert socket_a.sent_messages[0] == message
         assert socket_b.sent_messages[0] == message
     finally:

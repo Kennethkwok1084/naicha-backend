@@ -428,7 +428,7 @@ class OrderService:
         """
         批量加载商品及允许的规格组。
 
-        通过一次查询拿到商品和映射表，减少多次 round-trip。
+        通过一次查询拿到商品和映射表,减少多次 round-trip。
         """
         product_ids = {item.product_id for item in items}
         if not product_ids:
@@ -511,6 +511,7 @@ class OrderService:
             "is_scheduled": bool(reservation_plan),
             "scheduled_at": scheduled_at,
             "reservation_slot_id": reservation_slot_id,
+            "version": 0,
         }
 
     def _pick_spec_options(

@@ -12,6 +12,11 @@ PAYMENT_CALLBACK_TOTAL = Counter(
     "微信支付通知处理次数按结果分类。",
     ["result"],
 )
+PAYMENT_CALLBACK_DUPLICATE_TOTAL = Counter(
+    "payment_callback_duplicate_total",
+    "支付平台重复回调次数(按渠道)。",
+    ["channel"],
+)
 PAYMENT_CALLBACK_LATENCY_MS = Histogram(
     "payment_callback_latency_ms",
     "微信支付通知处理耗时(毫秒)。",
@@ -25,6 +30,7 @@ PAYMENT_SIDE_EFFECTS_TOTAL = Counter(
 )
 
 __all__ = [
+    "PAYMENT_CALLBACK_DUPLICATE_TOTAL",
     "PAYMENT_CALLBACK_LATENCY_MS",
     "PAYMENT_CALLBACK_TOTAL",
     "PAYMENT_MATCH_ATTEMPT_TOTAL",

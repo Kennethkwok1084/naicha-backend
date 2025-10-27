@@ -16,7 +16,7 @@ ORDER_AUTO_CANCEL_TOTAL = Counter(
 
 ORDER_AUTO_CANCEL_DELAY_SECONDS = Histogram(
     "orders_auto_cancel_delay_seconds",
-    "订单从创建到被自动取消的耗时（秒）。",
+    "订单从创建到被自动取消的耗时(秒)。",
     ["source"],
     buckets=(
         60,

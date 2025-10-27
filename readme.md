@@ -148,10 +148,17 @@ make test      # 单元/集成测试
 make migrate   # 生成迁移
 make updb      # 应用迁移（alembic upgrade head）
 
+# 测试数据
+make seed-data  # 创建完整测试数据（管理员/用户/商品/订单等）
+make seed-clean # 清空并重新创建测试数据
+python scripts/verify_test_data.py  # 验证数据完整性
+
 # 本地启动
 make dev       # uvicorn --reload
 make worker    # Celery worker（处理打印等后台任务）
 ```
+
+> 💡 **首次运行**：执行 `make updb && make seed-data` 即可获得包含 3 个管理员、4 个用户、10 个商品、8 个订单等的完整测试环境。详见 [TEST_DATA.md](TEST_DATA.md)
 
 ---
 

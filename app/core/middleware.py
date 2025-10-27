@@ -44,7 +44,7 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
         
         duration_ms = (time.time() - start_time) * 1000
         
-        # 记录慢请求（超过500ms）
+        # 记录慢请求(超过500ms)
         if duration_ms > 500:
             logger.warning(
                 "slow_request",

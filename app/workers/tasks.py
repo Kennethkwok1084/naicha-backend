@@ -22,8 +22,8 @@ from app.metrics.tasks import (
     RESERVATION_REMINDER_TOTAL,
 )
 from app.models.orders import Order
-from app.services.maintenance import MaintenanceService
 from app.services.loyalty import LoyaltyService
+from app.services.maintenance import MaintenanceService
 from app.services.orders import OrderService
 from app.services.reconciliation import ReconciliationService
 from app.services.reservations import ReservationService

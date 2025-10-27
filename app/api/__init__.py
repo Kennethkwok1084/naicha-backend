@@ -5,6 +5,7 @@ from app.api.routes import (
     guests,
     me,
     menu,
+    ops,
     orders,
     payments,
     shop,
@@ -12,7 +13,6 @@ from app.api.routes import (
     users,
     want,
     ws,
-    ops,
 )
 
 api_router = APIRouter()

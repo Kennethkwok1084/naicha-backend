@@ -583,6 +583,7 @@
 - **观测指标**：
   - `payment_callback_total{result=success|order_not_found|conflict|unexpected_error}`
   - `payment_callback_latency_ms`
+  - `payment_callback_duplicate_total{channel}`
   - `print_job_total{result=success|missing|retry_scheduled|non_retryable_failure|retry_limit}`
   - `print_job_retry_count`
 - **测试清单**：
@@ -604,13 +605,17 @@
 {"type": "connection.ready", "admin_id": 1}
 {"type": "order.paid.snapshot", "orders": [{"order_id": 500,"order_number": "202510170500-NA0001","status": "paid","paid_at": "2025-10-17T07:20:00+00:00"}]}
 {"type": "order.paid", "order": {"order_id": 9001,"order_number": "20251017153045-NA1234","total_price": 26.0,"status": "paid","paid_at": "2025-10-17T07:31:45+00:00"}}
+{"type": "print_job.failed", "job": {"job_id": 321,"order_id": 9001,"try_count": 5}, "order": {"order_id": 9001,"order_number": "20251017153045-NA1234","status": "paid"}, "error": "打印服务返回错误: 400"}
 ```
 - **错误码**：
   - WS Close `1008` Missing token —— 未携带 Token
   - WS Close `1008` Insufficient scope —— 非管理员 Token
 - **副作用**：实时推送订单状态（依赖内存广播，后续可扩展 Redis Stream）
 - **审计记录**：暂不记录
-- **观测指标**：待补（计划 `ws_connections_active`、`ws_broadcast_fail_total`）
+- **观测指标**：
+  - `ws_connections_active`
+  - `ws_broadcast_fail_total`
+  - `print_job_total{result=print_job.failed 推送对应 result}` (用于监控失败通知量)
 - **测试清单**：
   - [x] 正常流（离线补推 + 心跳）
   - [x] 权限校验（缺失 Token）

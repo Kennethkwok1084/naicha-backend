@@ -27,6 +27,8 @@ __all__ = [
     "Coupon",
     "IdempotencyKey",
     "LoyaltyTransaction",
+    "MaintenanceHeartbeat",
+    "MaintenanceJob",
     "Order",
     "OrderItem",
     "PaymentRecord",
@@ -42,6 +44,4 @@ __all__ = [
     "User",
     "UserAddress",
     "WantEvent",
-    "MaintenanceJob",
-    "MaintenanceHeartbeat",
 ]

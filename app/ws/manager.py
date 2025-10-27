@@ -15,6 +15,9 @@ from app.core.settings import Settings, get_settings
 
 logger = get_logger(__name__)
 
+_QUEUE_STOP = object()
+_BACKPRESSURE_CLOSE_CODE = 1013
+
 
 class MerchantNotifier:
     """维护商户端 WebSocket 连接并支持跨实例广播订单事件。"""
@@ -23,6 +26,8 @@ class MerchantNotifier:
         self._settings = settings
         self._connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
+        self._connection_queues: dict[WebSocket, asyncio.Queue[dict[str, Any]]] = {}
+        self._sender_tasks: dict[WebSocket, asyncio.Task[None]] = {}
         self._publisher: redis.Redis | None = None
         self._subscriber: redis.Redis | None = None
         self._pubsub: PubSub | None = None
@@ -56,6 +61,11 @@ class MerchantNotifier:
                 self._started = True
 
     async def shutdown(self) -> None:
+        async with self._lock:
+            draining = list(self._connections)
+        for connection in draining:
+            await self.unregister(connection)
+
         if self._listener_task:
             self._listener_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -73,10 +83,28 @@ class MerchantNotifier:
     async def register(self, websocket: WebSocket) -> None:
         async with self._lock:
             self._connections.add(websocket)
+            queue = asyncio.Queue(maxsize=max(self._settings.merchant_ws_buffer_size, 1))
+            self._connection_queues[websocket] = queue
+            self._sender_tasks[websocket] = asyncio.create_task(
+                self._drain_queue(websocket, queue)
+            )
 
     async def unregister(self, websocket: WebSocket) -> None:
+        task: asyncio.Task[None] | None = None
+        queue: asyncio.Queue[dict[str, Any]] | None = None
         async with self._lock:
             self._connections.discard(websocket)
+            queue = self._connection_queues.pop(websocket, None)
+            task = self._sender_tasks.pop(websocket, None)
+
+        if queue is not None:
+            self._signal_queue_stop(queue)
+
+        current_task = asyncio.current_task()
+        if task is not None and task is not current_task:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     async def broadcast(self, message: dict[str, Any], *, publish: bool = True) -> None:
         if not publish:
@@ -103,22 +131,29 @@ class MerchantNotifier:
             return False
 
     async def _broadcast_local(self, message: dict[str, Any]) -> None:
+        stale: list[WebSocket] = []
         async with self._lock:
             if not self._connections:
                 return
 
-            stale: list[WebSocket] = []
             for connection in self._connections:
                 if connection.application_state != WebSocketState.CONNECTED:
                     stale.append(connection)
                     continue
+                queue = self._connection_queues.get(connection)
+                if queue is None:
+                    stale.append(connection)
+                    continue
+                if queue.full():
+                    with suppress(asyncio.QueueEmpty):
+                        queue.get_nowait()
                 try:
-                    await connection.send_json(message)
-                except Exception:
+                    queue.put_nowait(message)
+                except asyncio.QueueFull:
                     stale.append(connection)
 
-            for connection in stale:
-                self._connections.discard(connection)
+        for connection in stale:
+            await self._disconnect_connection(connection, reason="buffer_overflow")
 
     async def _run_listener(self) -> None:
         if self._subscriber is None:
@@ -151,6 +186,45 @@ class MerchantNotifier:
             with suppress(Exception):
                 await pubsub.aclose()
             self._pubsub = None
+
+    async def _drain_queue(
+        self,
+        websocket: WebSocket,
+        queue: asyncio.Queue[dict[str, Any]],
+    ) -> None:
+        timeout = max(float(self._settings.merchant_ws_send_timeout_seconds), 0.1)
+        try:
+            while True:
+                message = await queue.get()
+                if message is _QUEUE_STOP:
+                    break
+                try:
+                    await asyncio.wait_for(websocket.send_json(message), timeout=timeout)
+                except TimeoutError:
+                    logger.warning("ws.broadcast.send_timeout", admin_conn=id(websocket))
+                    await self._disconnect_connection(websocket, reason="send_timeout")
+                    break
+                except Exception:
+                    logger.exception("ws.broadcast.send_failed")
+                    await self._disconnect_connection(websocket, reason="send_failed")
+                    break
+        except asyncio.CancelledError:
+            raise
+
+    def _signal_queue_stop(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        while True:
+            try:
+                queue.put_nowait(_QUEUE_STOP)  # type: ignore[arg-type]
+                break
+            except asyncio.QueueFull:
+                with suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
+                continue
+
+    async def _disconnect_connection(self, websocket: WebSocket, reason: str) -> None:
+        with suppress(Exception):
+            await websocket.close(code=_BACKPRESSURE_CLOSE_CODE, reason=reason)
+        await self.unregister(websocket)
 
     async def _cleanup_redis(self) -> None:
         if self._subscriber is not None:

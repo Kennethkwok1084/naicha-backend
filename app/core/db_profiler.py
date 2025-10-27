@@ -11,7 +11,7 @@ from structlog import get_logger
 
 logger = get_logger(__name__)
 
-# 慢查询阈值（毫秒）
+# 慢查询阈值(毫秒)
 SLOW_QUERY_THRESHOLD_MS = 100
 
 
