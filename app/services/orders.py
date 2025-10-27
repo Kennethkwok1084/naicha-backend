@@ -26,7 +26,7 @@ from app.metrics.orders import (
     ORDER_AUTO_CANCEL_TOTAL,
     ORDER_CREATE_TOTAL,
 )
-from app.models.accounts import User
+from app.models.accounts import Coupon, User
 from app.models.catalog import Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import AuditLog, IdempotencyKey, Order, OrderItem
 from app.schemas.order import (
@@ -212,6 +212,38 @@ class OrderService:
             guest_session_id,
             reservation_plan=reservation_plan,
         )
+        
+        # 应用优惠券折扣
+        if payload.coupon_id and user:
+            from app.services.loyalty import CouponInvalidError, CouponNotFoundError, LoyaltyService
+            
+            loyalty_service = LoyaltyService(self._session, self._settings)
+            try:
+                # 临时创建订单ID以便验证优惠券(实际订单ID稍后生成)
+                # 先验证优惠券是否有效, 但不标记为已使用
+                coupon_stmt = select(Coupon).where(
+                    Coupon.coupon_id == payload.coupon_id,
+                    Coupon.user_id == user.user_id,
+                    Coupon.status == "active",
+                ).with_for_update()
+                coupon_result = await self._session.execute(coupon_stmt)
+                coupon = coupon_result.scalar_one_or_none()
+                
+                if not coupon:
+                    raise OrderValidationError("优惠券不存在、已使用或不属于当前用户")
+                
+                # 应用折扣 - free_any_drink 类型免单最便宜的一杯
+                if coupon.type == "free_any_drink":
+                    if db_items_payload:
+                        # 找到最便宜的单品
+                        cheapest_price = min(
+                            Decimal(str(item["unit_price"])) for item in db_items_payload
+                        )
+                        discount = cheapest_price
+                        total_price = max(Decimal("0.00"), total_price - discount)
+            except (CouponNotFoundError, CouponInvalidError) as e:
+                raise OrderValidationError(str(e)) from e
+        
         order_values["total_price"] = total_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         order_stmt = (
@@ -251,6 +283,17 @@ class OrderService:
         )
         items_result = await self._session.execute(items_stmt, db_items_payload)
         inserted_items = items_result.fetchall()
+        
+        # 标记优惠券为已使用
+        if payload.coupon_id and user:
+            from app.services.loyalty import LoyaltyService
+            
+            loyalty_service = LoyaltyService(self._session, self._settings)
+            await loyalty_service.use_coupon(
+                coupon_id=payload.coupon_id,
+                user_id=user.user_id,
+                order_id=order_id,
+            )
 
         response_items: list[dict[str, Any]] = []
         for base, row in zip(response_items_base, inserted_items, strict=True):
@@ -511,6 +554,7 @@ class OrderService:
             "is_scheduled": bool(reservation_plan),
             "scheduled_at": scheduled_at,
             "reservation_slot_id": reservation_slot_id,
+            "coupon_id": payload.coupon_id,
             "version": 0,
         }
 

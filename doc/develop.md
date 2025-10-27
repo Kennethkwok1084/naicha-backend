@@ -410,7 +410,7 @@ CREATE INDEX idx_coupons_user_status ON coupons(user_id, status);
 
 * POS：`POST /api/v1/admin/orders`（快速建单）。
 * 静态码匹配：`POST /api/v1/admin/payments/match`（±5 分钟窗口、金额一致、唯一命中自动匹配，歧义进入人工确认）。
-* 会员：支付成功发放积分→满 10 自动发券（已从杯数改为按金额累积，可配置 `loyalty_points_ratio`）。
+* 会员：支付成功发放积分→满 10 杯自动发券（按杯数累计，可配置 `loyalty_points_ratio` 代表每杯积分）。
 * 看板：`GET /api/v1/admin/dashboard`（今日/周/月流水、订单数、客单价、Top5、渠道拆分、同比对比）。
 * **监控**：部署 Prometheus/Grafana；家→云 **ping CronJob** 导出 RTT/丢包；接口 QPS/失败率、缓存命中率、打印失败率；报警阈值配置。
 
@@ -439,7 +439,7 @@ CREATE INDEX idx_coupons_user_status ON coupons(user_id, status);
 **验收结论**：✅ **M4 已 100% 完成**（2025-10-21）
 - POS 闭环可用（现金/微信支付，角色权限，审计+打印+WS）
 - 静态码匹配命中率达预期（±5min 窗口，唯一/冲突/多候选处理）
-- 会员积分按金额累积，满 10 分自动发券
+- 会员积分按杯数累积，满 10 分自动发券
 - 看板聚合正确（day/week/month 维度 + 同比对比 + 60s 缓存）
 - Grafana 面板与告警已配置完成
 - 运维 Runbook 已就位

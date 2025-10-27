@@ -55,6 +55,10 @@ class Order(Base, TimestampMixin):
         ForeignKey("reservation_slots.slot_id", ondelete="SET NULL"),
         nullable=True,
     )
+    coupon_id: Mapped[int | None] = mapped_column(
+        ForeignKey("coupons.coupon_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

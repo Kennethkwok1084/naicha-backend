@@ -18,6 +18,13 @@ from .inventory import (
     InventorySpecOptionResponseSchema,
     InventoryUpdateRequestSchema,
 )
+from .loyalty import (
+    CouponSchema,
+    CouponsResponseSchema,
+    CouponStatsSchema,
+    LoyaltyTransactionSchema,
+    LoyaltyTransactionsResponseSchema,
+)
 from .menu import (
     MenuCategorySchema,
     MenuProductSchema,
@@ -68,6 +75,9 @@ __all__ = [
     "AdminPaymentMatchCandidateSchema",
     "AdminPaymentMatchRequestSchema",
     "AdminPaymentMatchResponseSchema",
+    "CouponSchema",
+    "CouponStatsSchema",
+    "CouponsResponseSchema",
     "DashboardPaymentChannelSchema",
     "DashboardResponseSchema",
     "DashboardSummarySchema",
@@ -80,6 +90,8 @@ __all__ = [
     "InventoryProductResponseSchema",
     "InventorySpecOptionResponseSchema",
     "InventoryUpdateRequestSchema",
+    "LoyaltyTransactionSchema",
+    "LoyaltyTransactionsResponseSchema",
     "MenuCategorySchema",
     "MenuProductSchema",
     "MenuResponseSchema",
