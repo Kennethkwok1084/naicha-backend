@@ -1,6 +1,6 @@
 """add optimistic locking column to orders
 
-Revision ID: 20251101_add_order_version_column
+Revision ID: 20251101_order_version
 Revises: 20251029_add_reservation_slots
 Create Date: 2025-11-01 10:00:00.000000
 """
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "20251101_add_order_version_column"
+revision = "20251101_order_version"
 down_revision = "20251029_add_reservation_slots"
 branch_labels = None
 depends_on = None

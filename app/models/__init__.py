@@ -1,4 +1,5 @@
 from app.models.accounts import Admin, Coupon, LoyaltyTransaction, User, UserAddress
+from app.models.advertisement import AdCreative, AdPlacement, AdSlot
 from app.models.catalog import (
     Category,
     Product,
@@ -21,6 +22,9 @@ from app.models.reservations import ReservationSlot
 from app.models.shop import ShopProfile, ShopSetting
 
 __all__ = [
+    "AdCreative",
+    "AdPlacement",
+    "AdSlot",
     "Admin",
     "AuditLog",
     "Category",
