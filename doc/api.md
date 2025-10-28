@@ -158,6 +158,424 @@
 - **变更历史**：
   - 2025-10-10：首次发布
 
+### 广告配置获取
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`GET /api/v1/ads/config`
+- **权限**：公开
+- **幂等要求**：是
+- **限流**：继承 SlowAPI 全局配置
+- **请求体**（Query 示例）：
+```json
+{
+  "slots": "HOME_BANNER,HOME_CARD",
+  "platform": "miniapp",
+  "ver": 1698765432
+}
+```
+- **响应体**：
+```json
+{
+  "version": 1698765440,
+  "slots": {
+    "HOME_BANNER": [
+      {
+        "creative_id": 1,
+        "title": "秋季新品",
+        "image_url": "https://cdn.example.com/banner.png",
+        "jump_type": "miniapp_page",
+        "jump_payload": {"path": "/pages/menu/index"},
+        "tags": ["launch"],
+        "priority": 10,
+        "sort_order": 0
+      }
+    ]
+  }
+}
+```
+- **错误码**：
+  - 422 slots 缺失或为空 —— 请求参数不合法
+- **副作用**：读缓存 / 读库
+- **审计记录**：否
+- **观测指标**：可追加 `ads_config_request_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 参数校验（缺少 slots）
+  - [x] 版本一致返回空集
+  - [ ] 并发 / 性能
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 广告曝光打点
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`POST /api/v1/ads/track/expose`
+- **权限**：公开
+- **幂等要求**：否
+- **限流**：继承 SlowAPI 全局配置
+- **请求体**：
+```json
+{
+  "slot": "HOME_BANNER",
+  "creative_id": 1,
+  "user_id": 123,
+  "session_id": "gs_xxx"
+}
+```
+- **响应体**：`204 No Content`
+- **错误码**：
+  - 422 参数缺失 —— 请求体不合法
+- **副作用**：写日志
+- **审计记录**：否
+- **观测指标**：待补 `ads_expose_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 参数校验
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 广告点击打点
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`POST /api/v1/ads/track/click`
+- **权限**：公开
+- **幂等要求**：否
+- **限流**：继承 SlowAPI 全局配置
+- **请求体**：
+```json
+{
+  "slot": "HOME_BANNER",
+  "creative_id": 1,
+  "user_id": 123,
+  "session_id": "gs_xxx"
+}
+```
+- **响应体**：`204 No Content`
+- **错误码**：
+  - 422 参数缺失 —— 请求体不合法
+- **副作用**：写日志
+- **审计记录**：否
+- **观测指标**：待补 `ads_click_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 参数校验
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 广告位列表
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`GET /api/v1/admin/ads/slots`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：是
+- **限流**：`30 req/min/管理员`（应用内）
+- **请求体**：无
+- **响应体**：
+```json
+[
+  {
+    "slot_id": 1,
+    "code": "HOME_BANNER",
+    "name": "首页轮播",
+    "description": "顶部轮播位",
+    "spec": {"max_count": 5},
+    "created_at": "2025-11-05T08:00:00Z"
+  }
+]
+```
+- **错误码**：无
+- **副作用**：读库
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_slot_list_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 创建广告位
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`POST /api/v1/admin/ads/slots`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：
+```json
+{
+  "code": "HOME_BANNER",
+  "name": "首页轮播",
+  "description": "顶部轮播位",
+  "spec": {"max_count": 5}
+}
+```
+- **响应体**：与“广告位列表”单项结构一致
+- **错误码**：
+  - 409 广告位编码重复 —— code 已存在
+- **副作用**：写库（ad_slots）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_slot_create_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 重复编码
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 更新广告位
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`PUT /api/v1/admin/ads/slots/{slot_code}`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：
+```json
+{
+  "name": "首页轮播",
+  "description": "顶部轮播位",
+  "spec": {"max_count": 6}
+}
+```
+- **响应体**：与“广告位列表”单项结构一致
+- **错误码**：
+  - 404 广告位不存在 —— slot_code 无匹配记录
+- **副作用**：写库（ad_slots）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_slot_update_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 404 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 广告素材列表
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`GET /api/v1/admin/ads/creatives`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：是
+- **限流**：`30 req/min/管理员`
+- **请求体**（Query 示例）：
+```json
+{
+  "enabled": true,
+  "platform": "miniapp"
+}
+```
+- **响应体**：
+```json
+[
+  {
+    "creative_id": 1,
+    "title": "秋季上新",
+    "image_url": "https://cdn.example.com/banner.png",
+    "jump_type": "miniapp_page",
+    "jump_payload": {"path": "/pages/menu/index"},
+    "start_time": null,
+    "end_time": null,
+    "enabled": true,
+    "priority": 10,
+    "platforms": ["miniapp"],
+    "tags": ["launch"],
+    "created_at": "2025-11-05T08:00:00Z",
+    "updated_at": "2025-11-05T08:00:00Z"
+  }
+]
+```
+- **错误码**：无
+- **副作用**：读库
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_creative_list_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 参数过滤
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 创建广告素材
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`POST /api/v1/admin/ads/creatives`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：
+```json
+{
+  "title": "秋季上新",
+  "image_url": "https://cdn.example.com/banner.png",
+  "jump_type": "miniapp_page",
+  "jump_payload": {"path": "/pages/menu/index"},
+  "priority": 10,
+  "platforms": ["miniapp"],
+  "tags": ["launch"]
+}
+```
+- **响应体**：与“广告素材列表”单项结构一致
+- **错误码**：
+  - 422 参数非法 —— jump_type 不在白名单
+- **副作用**：写库（ad_creatives）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_creative_create_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 更新广告素材
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`PUT /api/v1/admin/ads/creatives/{creative_id}`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：
+```json
+{
+  "title": "秋季热饮",
+  "enabled": true,
+  "tags": ["promo"]
+}
+```
+- **响应体**：与“广告素材列表”单项结构一致
+- **错误码**：
+  - 404 素材不存在 —— creative_id 无匹配记录
+- **副作用**：写库（ad_creatives）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_creative_update_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 404 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 删除广告素材
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`DELETE /api/v1/admin/ads/creatives/{creative_id}`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：无
+- **响应体**：`204 No Content`
+- **错误码**：
+  - 404 素材不存在 —— creative_id 无匹配记录
+- **副作用**：写库（ad_creatives/ad_placements 级联删除）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_creative_delete_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 404 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 广告投放列表
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`GET /api/v1/admin/ads/placements`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：是
+- **限流**：`30 req/min/管理员`
+- **请求体**（Query 示例）：
+```json
+{
+  "slot_code": "HOME_BANNER"
+}
+```
+- **响应体**：
+```json
+[
+  {
+    "placement_id": 1,
+    "slot_code": "HOME_BANNER",
+    "creative_id": 1,
+    "sort_order": 0,
+    "created_at": "2025-11-05T08:00:00Z",
+    "updated_at": "2025-11-05T08:00:00Z",
+    "creative": {"creative_id": 1, "title": "秋季上新", "image_url": "https://cdn.example.com/banner.png", "jump_type": "miniapp_page", "jump_payload": {"path": "/pages/menu/index"}, "start_time": null, "end_time": null, "enabled": true, "priority": 10, "platforms": ["miniapp"], "tags": ["launch"], "created_at": "2025-11-05T08:00:00Z", "updated_at": "2025-11-05T08:00:00Z"}
+  }
+]
+```
+- **错误码**：
+  - 404 广告位不存在 —— slot_code 无匹配记录
+- **副作用**：读库
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_placement_list_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 404 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 添加广告投放
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`POST /api/v1/admin/ads/placements`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：
+```json
+{
+  "slot_code": "HOME_BANNER",
+  "creative_id": 1,
+  "sort_order": 0
+}
+```
+- **响应体**：与“广告投放列表”单项结构一致
+- **错误码**：
+  - 404 广告位不存在
+  - 404 素材不存在
+  - 409 素材已存在于广告位
+- **副作用**：写库（ad_placements）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_placement_create_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 404/409 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 更新投放排序
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`PUT /api/v1/admin/ads/placements/order`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：
+```json
+{
+  "slot_code": "HOME_BANNER",
+  "creative_ids": [2, 1]
+}
+```
+- **响应体**：`204 No Content`
+- **错误码**：
+  - 404 存在未投放的素材 —— creative_ids 与 slot_code 不匹配
+- **副作用**：写库（ad_placements）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_placement_reorder_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 404 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
+### 删除广告投放
+- **状态**：新增 （日期：2025-11-05）
+- **路径/方法**：`DELETE /api/v1/admin/ads/placements/{placement_id}`
+- **权限**：管理员（角色：admin/manager）
+- **幂等要求**：否
+- **限流**：`10 req/min/管理员`
+- **请求体**：无
+- **响应体**：`204 No Content`
+- **错误码**：
+  - 404 投放不存在 —— placement_id 无匹配记录
+- **副作用**：写库（ad_placements）
+- **审计记录**：否
+- **观测指标**：待补 `admin_ads_placement_delete_total`
+- **测试清单**：
+  - [x] 正常流
+  - [x] 权限校验
+  - [x] 404 分支
+- **变更历史**：
+  - 2025-11-05：首次发布
+
 ### 检查配送范围
 - **状态**：新增 （日期：2025-10-10）
 - **路径/方法**：`POST /api/v1/shop/delivery/check`

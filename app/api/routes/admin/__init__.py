@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,11 +23,20 @@ from app.metrics.admin_orders import (
 from app.models.accounts import Admin
 from app.models.orders import AuditLog, Order, PrintJob
 from app.schemas import (
+    AdCreativeCreateSchema,
+    AdCreativeResponseSchema,
+    AdCreativeUpdateSchema,
     AdminLoginRequestSchema,
     AdminOrderCreateRequestSchema,
     AdminOrderResponseSchema,
     AdminPaymentMatchRequestSchema,
     AdminPaymentMatchResponseSchema,
+    AdPlacementCreateSchema,
+    AdPlacementDetailSchema,
+    AdPlacementOrderUpdateSchema,
+    AdSlotCreateSchema,
+    AdSlotSchema,
+    AdSlotUpdateSchema,
     DashboardResponseSchema,
     InventoryProductResponseSchema,
     InventorySpecOptionResponseSchema,
@@ -35,6 +44,14 @@ from app.schemas import (
     OrderCreateRequestSchema,
     TokenSchema,
     WantStatsResponseSchema,
+)
+from app.services.advertisement import (
+    AdCreativeNotFoundError,
+    AdPlacementConflictError,
+    AdPlacementNotFoundError,
+    AdSlotNotFoundError,
+    AdvertisementService,
+    AdvertisementServiceError,
 )
 from app.services.auth import AuthService
 from app.services.dashboard import DashboardService
@@ -63,6 +80,7 @@ logger = get_logger(__name__)
 _POS_ALLOWED_ROLES: set[str] = {"admin", "manager", "clerk"}
 _POS_IMMEDIATE_CHANNELS: set[str] = {"cash", "pos_card"}
 _INVENTORY_ALLOWED_ROLES: set[str] = {"admin", "manager"}
+_AD_MANAGE_ALLOWED_ROLES: set[str] = {"admin", "manager"}
 
 
 def _admin_rate_limit_key(request: Request) -> str:
@@ -88,6 +106,12 @@ async def get_want_service(
     session: AsyncSession = Depends(get_async_session),
 ) -> WantService:
     return WantService(session, get_settings())
+
+
+async def get_advertisement_service(
+    session: AsyncSession = Depends(get_async_session),
+) -> AdvertisementService:
+    return AdvertisementService(session, get_settings())
 
 
 @router.post("/login", response_model=TokenSchema)
@@ -390,6 +414,14 @@ def _ensure_inventory_role(admin: Admin) -> None:
         )
 
 
+def _ensure_ad_role(admin: Admin) -> None:
+    if admin.role not in _AD_MANAGE_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient role for advertisement management.",
+        )
+
+
 async def _load_json(request: Request) -> dict[str, object]:
     try:
         return await request.json()
@@ -403,6 +435,13 @@ async def _load_json(request: Request) -> dict[str, object]:
 def _parse_inventory_payload(request_body: dict[str, object]) -> InventoryUpdateRequestSchema:
     try:
         return InventoryUpdateRequestSchema.model_validate(request_body)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
+def _parse_payload(schema: type[BaseModel], request_body: dict[str, object]) -> BaseModel:
+    try:
+        return schema.model_validate(request_body)
     except ValidationError as exc:
         raise RequestValidationError(exc.errors()) from exc
 
@@ -512,3 +551,265 @@ async def get_want_stats(
         top_products=payload["top_products"],
         daily_series=payload["daily_series"],
     )
+
+
+@router.get(
+    "/ads/slots",
+    response_model=list[AdSlotSchema],
+    summary="列出广告位",
+)
+@limiter.limit("30/minute", key_func=_admin_rate_limit_key)
+async def list_ad_slots(
+    request: Request,
+    response: Response,
+    admin: Admin = Depends(get_current_admin),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> list[AdSlotSchema]:
+    _ensure_ad_role(admin)
+    slots = await service.list_slots()
+    return [AdSlotSchema.model_validate(slot) for slot in slots]
+
+
+@router.post(
+    "/ads/slots",
+    response_model=AdSlotSchema,
+    status_code=status.HTTP_201_CREATED,
+    summary="创建广告位",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def create_ad_slot(
+    request: Request,
+    response: Response,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> AdSlotSchema:
+    _ensure_ad_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_payload(AdSlotCreateSchema, raw)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            slot = await service.create_slot(payload)
+        except AdvertisementServiceError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+    return AdSlotSchema.model_validate(slot)
+
+
+@router.put(
+    "/ads/slots/{slot_code}",
+    response_model=AdSlotSchema,
+    summary="更新广告位",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def update_ad_slot(
+    request: Request,
+    response: Response,
+    slot_code: str,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> AdSlotSchema:
+    _ensure_ad_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_payload(AdSlotUpdateSchema, raw)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            slot = await service.update_slot(slot_code, payload)
+        except AdSlotNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AdSlotSchema.model_validate(slot)
+
+
+@router.get(
+    "/ads/creatives",
+    response_model=list[AdCreativeResponseSchema],
+    summary="列出广告素材",
+)
+@limiter.limit("30/minute", key_func=_admin_rate_limit_key)
+async def list_ad_creatives(
+    request: Request,
+    response: Response,
+    enabled: bool | None = Query(default=None),
+    platform: str | None = Query(default=None),
+    admin: Admin = Depends(get_current_admin),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> list[AdCreativeResponseSchema]:
+    _ensure_ad_role(admin)
+    creatives = await service.list_creatives(enabled=enabled, platform=platform)
+    return [AdCreativeResponseSchema.model_validate(item) for item in creatives]
+
+
+@router.post(
+    "/ads/creatives",
+    response_model=AdCreativeResponseSchema,
+    status_code=status.HTTP_201_CREATED,
+    summary="创建广告素材",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def create_ad_creative(
+    request: Request,
+    response: Response,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> AdCreativeResponseSchema:
+    _ensure_ad_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_payload(AdCreativeCreateSchema, raw)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        creative = await service.create_creative(payload)
+    return AdCreativeResponseSchema.model_validate(creative)
+
+
+@router.put(
+    "/ads/creatives/{creative_id}",
+    response_model=AdCreativeResponseSchema,
+    summary="更新广告素材",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def update_ad_creative(
+    request: Request,
+    response: Response,
+    creative_id: int,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> AdCreativeResponseSchema:
+    _ensure_ad_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_payload(AdCreativeUpdateSchema, raw)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            creative = await service.update_creative(creative_id, payload)
+        except AdCreativeNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AdCreativeResponseSchema.model_validate(creative)
+
+
+@router.delete(
+    "/ads/creatives/{creative_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="删除广告素材",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def delete_ad_creative(
+    request: Request,
+    response: Response,
+    creative_id: int,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> None:
+    _ensure_ad_role(admin)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            await service.delete_creative(creative_id)
+        except AdCreativeNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get(
+    "/ads/placements",
+    response_model=list[AdPlacementDetailSchema],
+    summary="查看广告位投放列表",
+)
+@limiter.limit("30/minute", key_func=_admin_rate_limit_key)
+async def list_ad_placements(
+    request: Request,
+    response: Response,
+    slot_code: str = Query(..., description="广告位编码"),
+    admin: Admin = Depends(get_current_admin),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> list[AdPlacementDetailSchema]:
+    _ensure_ad_role(admin)
+    try:
+        placements = await service.list_placements(slot_code)
+    except AdSlotNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return [AdPlacementDetailSchema.model_validate(placement) for placement in placements]
+
+
+@router.post(
+    "/ads/placements",
+    response_model=AdPlacementDetailSchema,
+    status_code=status.HTTP_201_CREATED,
+    summary="为广告位添加素材",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def create_ad_placement(
+    request: Request,
+    response: Response,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> AdPlacementDetailSchema:
+    _ensure_ad_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_payload(AdPlacementCreateSchema, raw)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            placement = await service.add_placement(payload)
+        except AdSlotNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except AdCreativeNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except AdPlacementConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        await session.refresh(placement, attribute_names=["creative"])
+    return AdPlacementDetailSchema.model_validate(placement)
+
+
+@router.put(
+    "/ads/placements/order",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="批量更新投放排序",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def update_ad_placement_order(
+    request: Request,
+    response: Response,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> None:
+    _ensure_ad_role(admin)
+    raw = await _load_json(request)
+    payload = _parse_payload(AdPlacementOrderUpdateSchema, raw)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            await service.update_placement_order(payload)
+        except AdPlacementNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/ads/placements/{placement_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="移除广告投放",
+)
+@limiter.limit("10/minute", key_func=_admin_rate_limit_key)
+async def delete_ad_placement(
+    request: Request,
+    response: Response,
+    placement_id: int,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_async_session),
+    service: AdvertisementService = Depends(get_advertisement_service),
+) -> None:
+    _ensure_ad_role(admin)
+    transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with transaction_ctx:
+        try:
+            await service.remove_placement(placement_id)
+        except AdPlacementNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
