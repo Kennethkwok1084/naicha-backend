@@ -58,6 +58,7 @@ from .shop import (
     DeliveryCheckResponseSchema,
     ShopFeaturesSchema,
     ShopLocationSchema,
+    ShopProfileSchema,
     ShopStatusSchema,
 )
 from .user import UserAddressSchema, UserProfileSchema
@@ -126,6 +127,7 @@ __all__ = [
     "PaymentNotifyResponseSchema",
     "ShopFeaturesSchema",
     "ShopLocationSchema",
+    "ShopProfileSchema",
     "ShopStatusSchema",
     "TokenSchema",
     "UserAddressSchema",

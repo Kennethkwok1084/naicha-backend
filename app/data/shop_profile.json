@@ -1,0 +1,16 @@
+{
+  "name": "奈茶示例门店",
+  "address": "上海市静安区示例路123号",
+  "phone": "021-88886666",
+  "announcement": "欢迎光临奈茶示例门店！",
+  "logo_url": "https://cdn.example.com/assets/shop-logo.png",
+  "updated_at": "2025-10-15T08:00:00+08:00",
+  "delivery_notes": [
+    "配送范围：门店周边1.5公里内",
+    "配送时间：9:00-21:00",
+    "满50元免配送费，不满收取5元配送费",
+    "最低起送金额20元"
+  ],
+  "supports_pickup": true,
+  "supports_delivery": true
+}
