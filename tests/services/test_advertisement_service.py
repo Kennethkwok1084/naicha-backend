@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from app.models.advertisement import AdCreative, AdPlacement, AdSlot
@@ -129,3 +130,35 @@ async def test_update_creative_invalidates_cache(db_session) -> None:
     refreshed = await service.get_config(slots=["HOME_BANNER"], platform="miniapp")
     assert refreshed.version >= initial.version
     assert refreshed.slots["HOME_BANNER"][0].title == "限时折扣"
+
+
+@pytest.mark.asyncio
+async def test_version_changes_when_start_time_passed(monkeypatch, db_session) -> None:
+    slot, creative, _ = await _seed_basic_ad(db_session)
+    system_now = datetime.now(tz=UTC)
+    go_live = system_now + timedelta(minutes=10)
+    base_now = go_live - timedelta(minutes=1)
+    creative.start_time = go_live
+    await db_session.flush()
+
+    service = AdvertisementService(db_session)
+
+    monkeypatch.setattr(
+        "app.services.advertisement.datetime",
+        SimpleNamespace(now=lambda tz=None: base_now),
+    )
+    initial = await service.get_config(slots=[slot.code], platform="miniapp")
+    first_version = initial.version
+    assert initial.slots[slot.code] == []
+
+    monkeypatch.setattr(
+        "app.services.advertisement.datetime",
+        SimpleNamespace(now=lambda tz=None: go_live + timedelta(seconds=1)),
+    )
+    refreshed = await service.get_config(
+        slots=[slot.code],
+        platform="miniapp",
+        current_version=initial.version,
+    )
+    assert refreshed.version > first_version
+    assert refreshed.slots[slot.code][0].creative_id == creative.creative_id

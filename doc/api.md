@@ -116,8 +116,54 @@
 - **变更历史**：
   - 2025-10-10：首次发布
 
+### 获取门店基础信息
+- **状态**：新增 （日期：2025-10-15）；更新 （日期：2025-10-31）
+- **路径/方法**：`GET /api/v1/shop/profile`
+- **权限**：公开
+- **幂等要求**：是（读接口）
+- **限流**：继承全局 SlowAPI 设置
+- **响应体**：
+```json
+{
+  "name": "奈茶王府井店",
+  "address": "北京市东城区王府井大街1号",
+  "phone": "010-66668888",
+  "announcement": "双十一全场 8 折！",
+  "logo_url": "https://cdn.example.com/logo.png",
+  "updated_at": "2025-10-15T08:00:00+08:00",
+  "delivery_notes": [
+    "配送范围：门店周边1.5公里内",
+    "配送时间：9:00-21:00",
+    "满50元免配送费，不满收取5元配送费",
+    "最低起送金额20元"
+  ],
+  "supports_pickup": true,
+  "supports_delivery": true,
+  "min_delivery_amount": "20.00",
+  "delivery_fee": "5.00",
+  "free_delivery_amount": "50.00"
+}
+```
+- **错误码**：
+  - 503 Shop profile snapshot 不存在。—— 缓存文件缺失/未初始化
+  - 503 Shop profile snapshot 校验失败。—— 缓存内容字段缺失或非法
+- **数据来源**：
+  - 基础信息（name/address/phone/announcement等）：Redis `SHOP_PROFILE_CACHE_KEY`（默认 `shop:profile`），缺失时回退到本地快照 `app/data/shop_profile.json`
+  - 配送配置（delivery_fee等）：从数据库 `shop_settings` 表读取（快照优先）
+- **副作用**：无
+- **审计记录**：不记录
+- **观测指标**：待补（建议关注前端缓存命中率）
+- **测试清单**：
+  - [x] 正常流
+  - [x] 缺失快照文件
+  - [ ] 并发一致性
+  - [ ] 性能阈值
+- **变更历史**：
+  - 2025-10-15：首次发布
+  - 2025-10-31：新增 delivery_notes、supports_pickup/delivery、配送费用配置字段
+
 ### 获取门店营业状态
-- **状态**：新增 （日期：2025-10-10）
+- **状态**：新增 （日期：2025-10-10）；更新 （日期：2025-10-31）
 - **路径/方法**：`GET /api/v1/shop/status`
 - **权限**：公开
 - **幂等要求**：是（读接口）
@@ -142,7 +188,8 @@
     "multi_category_enabled": true,
     "reservation_enabled": false,
     "want_enabled": true
-  }
+  },
+  "business_hours_today": "营业中 09:00-21:00"
 }
 ```
 - **错误码**：无
@@ -157,6 +204,7 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-10：首次发布
+  - 2025-10-31：新增 business_hours_today 字段（今日营业时间可读文案）
 
 ### 广告配置获取
 - **状态**：新增 （日期：2025-11-05）

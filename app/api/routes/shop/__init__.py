@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import get_settings
@@ -8,6 +9,7 @@ from app.db.session import get_async_session
 from app.schemas import (
     DeliveryCheckRequestSchema,
     DeliveryCheckResponseSchema,
+    ShopProfileSchema,
     ShopStatusSchema,
 )
 from app.services.shop import ShopProfileNotConfiguredError, ShopService
@@ -25,6 +27,23 @@ async def get_shop_service(
 async def shop_status(service: ShopService = Depends(get_shop_service)) -> ShopStatusSchema:
     payload = await service.get_status_payload()
     return ShopStatusSchema(**payload)
+
+
+@router.get("/profile", response_model=ShopProfileSchema, summary="获取门店基础信息")
+async def shop_profile(service: ShopService = Depends(get_shop_service)) -> ShopProfileSchema:
+    try:
+        payload = await service.get_profile_snapshot()
+        return ShopProfileSchema(**payload)
+    except ShopProfileNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Shop profile snapshot 校验失败。",
+        ) from exc
 
 
 @router.post(

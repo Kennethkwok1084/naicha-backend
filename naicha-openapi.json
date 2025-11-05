@@ -404,6 +404,560 @@
         }
       }
     },
+    "/api/v1/admin/ads/slots": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "列出广告位",
+        "operationId": "list_ad_slots_api_v1_admin_ads_slots_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdSlotSchema"
+                  },
+                  "type": "array",
+                  "title": "Response List Ad Slots Api V1 Admin Ads Slots Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "创建广告位",
+        "operationId": "create_ad_slot_api_v1_admin_ads_slots_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdSlotSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/ads/slots/{slot_code}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "更新广告位",
+        "operationId": "update_ad_slot_api_v1_admin_ads_slots__slot_code__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slot_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slot Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdSlotSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ads/creatives": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "列出广告素材",
+        "operationId": "list_ad_creatives_api_v1_admin_ads_creatives_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Platform"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdCreativeResponseSchema"
+                  },
+                  "title": "Response List Ad Creatives Api V1 Admin Ads Creatives Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "创建广告素材",
+        "operationId": "create_ad_creative_api_v1_admin_ads_creatives_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdCreativeResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ads/creatives/{creative_id}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "更新广告素材",
+        "operationId": "update_ad_creative_api_v1_admin_ads_creatives__creative_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "creative_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Creative Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdCreativeResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "删除广告素材",
+        "operationId": "delete_ad_creative_api_v1_admin_ads_creatives__creative_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "creative_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Creative Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ads/placements": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "查看广告位投放列表",
+        "operationId": "list_ad_placements_api_v1_admin_ads_placements_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slot_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "广告位编码",
+              "title": "Slot Code"
+            },
+            "description": "广告位编码"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdPlacementDetailSchema"
+                  },
+                  "title": "Response List Ad Placements Api V1 Admin Ads Placements Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "为广告位添加素材",
+        "operationId": "create_ad_placement_api_v1_admin_ads_placements_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdPlacementDetailSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ads/placements/order": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "批量更新投放排序",
+        "operationId": "update_ad_placement_order_api_v1_admin_ads_placements_order_put",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/ads/placements/{placement_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "移除广告投放",
+        "operationId": "delete_ad_placement_api_v1_admin_ads_placements__placement_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "placement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Placement Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ads/config": {
+      "get": {
+        "tags": [
+          "ads"
+        ],
+        "summary": "获取广告配置",
+        "operationId": "fetch_ad_config_api_v1_ads_config_get",
+        "parameters": [
+          {
+            "name": "slots",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "逗号分隔的广告位编码, 如 HOME_BANNER,HOME_CARD",
+              "title": "Slots"
+            },
+            "description": "逗号分隔的广告位编码, 如 HOME_BANNER,HOME_CARD"
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "default": "miniapp",
+              "title": "Platform"
+            }
+          },
+          {
+            "name": "ver",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Ver"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdConfigResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ads/track/expose": {
+      "post": {
+        "tags": [
+          "ads"
+        ],
+        "summary": "记录曝光事件",
+        "operationId": "track_expose_api_v1_ads_track_expose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdTrackRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ads/track/click": {
+      "post": {
+        "tags": [
+          "ads"
+        ],
+        "summary": "记录点击事件",
+        "operationId": "track_click_api_v1_ads_track_click_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdTrackRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/login": {
       "post": {
         "tags": [
@@ -542,6 +1096,130 @@
         ]
       }
     },
+    "/api/v1/me/loyalty/transactions": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "获取积分明细",
+        "description": "获取当前用户的积分明细",
+        "operationId": "get_loyalty_transactions_api_v1_me_loyalty_transactions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页数量",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "每页数量"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "偏移量",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "偏移量"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoyaltyTransactionsResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/coupons": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "获取优惠券列表",
+        "description": "获取当前用户的优惠券列表",
+        "operationId": "get_coupons_api_v1_me_coupons_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(active|used|expired|void)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "筛选状态",
+              "title": "Status"
+            },
+            "description": "筛选状态"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponsResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/menu": {
       "get": {
         "tags": [
@@ -577,6 +1255,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ShopStatusSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shop/profile": {
+      "get": {
+        "tags": [
+          "shop"
+        ],
+        "summary": "获取门店基础信息",
+        "operationId": "shop_profile_api_v1_shop_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShopProfileSchema"
                 }
               }
             }
@@ -862,6 +1561,327 @@
   },
   "components": {
     "schemas": {
+      "AdConfigCreativeSchema": {
+        "properties": {
+          "creative_id": {
+            "type": "integer",
+            "title": "Creative Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "jump_type": {
+            "type": "string",
+            "enum": [
+              "miniapp_page",
+              "h5",
+              "none"
+            ],
+            "title": "Jump Type"
+          },
+          "jump_payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jump Payload"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "creative_id",
+          "title",
+          "image_url",
+          "jump_type",
+          "priority",
+          "sort_order"
+        ],
+        "title": "AdConfigCreativeSchema"
+      },
+      "AdConfigResponseSchema": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "slots": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/AdConfigCreativeSchema"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Slots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "slots"
+        ],
+        "title": "AdConfigResponseSchema"
+      },
+      "AdCreativeResponseSchema": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "jump_type": {
+            "type": "string",
+            "enum": [
+              "miniapp_page",
+              "h5",
+              "none"
+            ],
+            "title": "Jump Type"
+          },
+          "jump_payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jump Payload"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority",
+            "default": 100
+          },
+          "platforms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Platforms"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "creative_id": {
+            "type": "integer",
+            "title": "Creative Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "image_url",
+          "jump_type",
+          "creative_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AdCreativeResponseSchema"
+      },
+      "AdPlacementDetailSchema": {
+        "properties": {
+          "placement_id": {
+            "type": "integer",
+            "title": "Placement Id"
+          },
+          "slot_code": {
+            "type": "string",
+            "title": "Slot Code"
+          },
+          "creative_id": {
+            "type": "integer",
+            "title": "Creative Id"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "creative": {
+            "$ref": "#/components/schemas/AdCreativeResponseSchema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "placement_id",
+          "slot_code",
+          "creative_id",
+          "sort_order",
+          "created_at",
+          "updated_at",
+          "creative"
+        ],
+        "title": "AdPlacementDetailSchema"
+      },
+      "AdSlotSchema": {
+        "properties": {
+          "slot_id": {
+            "type": "integer",
+            "title": "Slot Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slot_id",
+          "code",
+          "name",
+          "spec",
+          "created_at"
+        ],
+        "title": "AdSlotSchema"
+      },
+      "AdTrackRequestSchema": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          },
+          "creative_id": {
+            "type": "integer",
+            "title": "Creative Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slot",
+          "creative_id"
+        ],
+        "title": "AdTrackRequestSchema"
+      },
       "AdminLoginRequestSchema": {
         "properties": {
           "username": {
@@ -977,6 +1997,147 @@
           "payment_status"
         ],
         "title": "AdminPaymentMatchResponseSchema"
+      },
+      "CouponSchema": {
+        "properties": {
+          "coupon_id": {
+            "type": "integer",
+            "title": "Coupon Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "meta_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Json"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used At"
+          },
+          "used_in_order_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used In Order Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coupon_id",
+          "user_id",
+          "type",
+          "status",
+          "meta_json",
+          "issued_at",
+          "used_at",
+          "used_in_order_id",
+          "created_at"
+        ],
+        "title": "CouponSchema",
+        "description": "优惠券"
+      },
+      "CouponStatsSchema": {
+        "properties": {
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "active_count": {
+            "type": "integer",
+            "title": "Active Count"
+          },
+          "used_count": {
+            "type": "integer",
+            "title": "Used Count"
+          },
+          "expired_count": {
+            "type": "integer",
+            "title": "Expired Count"
+          },
+          "void_count": {
+            "type": "integer",
+            "title": "Void Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_count",
+          "active_count",
+          "used_count",
+          "expired_count",
+          "void_count"
+        ],
+        "title": "CouponStatsSchema",
+        "description": "优惠券状态统计"
+      },
+      "CouponsResponseSchema": {
+        "properties": {
+          "coupons": {
+            "items": {
+              "$ref": "#/components/schemas/CouponSchema"
+            },
+            "type": "array",
+            "title": "Coupons"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/CouponStatsSchema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coupons",
+          "stats"
+        ],
+        "title": "CouponsResponseSchema",
+        "description": "优惠券列表响应"
       },
       "DashboardPaymentChannelSchema": {
         "properties": {
@@ -1294,6 +2455,90 @@
           "updated_at"
         ],
         "title": "InventorySpecOptionResponseSchema"
+      },
+      "LoyaltyTransactionSchema": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "delta_points": {
+            "type": "integer",
+            "title": "Delta Points"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "order_id",
+          "delta_points",
+          "reason",
+          "created_at"
+        ],
+        "title": "LoyaltyTransactionSchema",
+        "description": "积分明细记录"
+      },
+      "LoyaltyTransactionsResponseSchema": {
+        "properties": {
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/LoyaltyTransactionSchema"
+            },
+            "type": "array",
+            "title": "Transactions"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "current_points": {
+            "type": "integer",
+            "title": "Current Points"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transactions",
+          "total_count",
+          "current_points",
+          "limit",
+          "offset"
+        ],
+        "title": "LoyaltyTransactionsResponseSchema",
+        "description": "积分明细列表响应"
       },
       "MenuCategorySchema-Input": {
         "properties": {
@@ -1863,6 +3108,118 @@
         ],
         "title": "ShopLocationSchema"
       },
+      "ShopProfileSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "announcement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Announcement"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "delivery_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Delivery Notes",
+            "description": "配送政策说明（多段）"
+          },
+          "supports_pickup": {
+            "type": "boolean",
+            "title": "Supports Pickup",
+            "description": "是否支持到店自取",
+            "default": true
+          },
+          "supports_delivery": {
+            "type": "boolean",
+            "title": "Supports Delivery",
+            "description": "是否支持外卖配送",
+            "default": true
+          },
+          "min_delivery_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Delivery Amount",
+            "description": "最低配送金额"
+          },
+          "delivery_fee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Fee",
+            "description": "配送费"
+          },
+          "free_delivery_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Delivery Amount",
+            "description": "免配送费金额"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "address",
+          "phone"
+        ],
+        "title": "ShopProfileSchema"
+      },
       "ShopStatusSchema": {
         "properties": {
           "is_open": {
@@ -1904,6 +3261,18 @@
           },
           "features": {
             "$ref": "#/components/schemas/ShopFeaturesSchema"
+          },
+          "business_hours_today": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Hours Today",
+            "description": "今日营业时间文案，如'营业中 09:00-21:00'"
           }
         },
         "type": "object",

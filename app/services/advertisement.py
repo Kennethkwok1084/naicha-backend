@@ -26,7 +26,7 @@ from app.schemas import (
 
 logger = get_logger(__name__)
 
-_CONFIG_CACHE: dict[str, tuple[float, int, dict[str, list[dict[str, Any]]]]] = {}
+_CONFIG_CACHE: dict[str, tuple[float, int, dict[str, list[dict[str, Any]]], datetime | None]] = {}
 _CACHE_TTL_SECONDS = 300
 
 
@@ -69,20 +69,29 @@ class AdvertisementService:
         cache_key = self._build_cache_key(normalized_slots, platform)
         cached = _CONFIG_CACHE.get(cache_key)
         now_epoch = time.time()
-        if cached and now_epoch - cached[0] < _CACHE_TTL_SECONDS:
-            version = cached[1]
-            payload = {
-                slot: [AdConfigCreativeSchema(**item) for item in creatives]
-                for slot, creatives in cached[2].items()
-            }
-            if current_version and current_version == version:
-                return AdConfigResponseSchema(version=version, slots={})
-            return AdConfigResponseSchema(version=version, slots=payload)
+        if cached:
+            cached_created_at, cached_version, cached_payload, cached_next_change = cached
+            cache_valid = now_epoch - cached_created_at < _CACHE_TTL_SECONDS
+            if cached_next_change is not None:
+                cache_valid = cache_valid and datetime.now(tz=UTC) < cached_next_change
+            if cache_valid:
+                payload = {
+                    slot: [AdConfigCreativeSchema(**item) for item in creatives]
+                    for slot, creatives in cached_payload.items()
+                }
+                if current_version and current_version == cached_version:
+                    return AdConfigResponseSchema(version=cached_version, slots={})
+                return AdConfigResponseSchema(version=cached_version, slots=payload)
 
-        version = await self._determine_version()
+        version, next_change = await self._determine_version(normalized_slots)
         if version == 0:
             payload = {slot: [] for slot in normalized_slots}
-            _CONFIG_CACHE[cache_key] = (now_epoch, version, {slot: [] for slot in normalized_slots})
+            _CONFIG_CACHE[cache_key] = (
+                now_epoch,
+                version,
+                {slot: [] for slot in normalized_slots},
+                next_change,
+            )
             if current_version and current_version == version:
                 return AdConfigResponseSchema(version=version, slots={})
             return AdConfigResponseSchema(version=version, slots=payload)
@@ -109,6 +118,7 @@ class AdvertisementService:
             now_epoch,
             version,
             {slot: [item for item in data.get(slot, [])] for slot in normalized_slots},
+            next_change,
         )
 
         if current_version and current_version == version:
@@ -350,7 +360,7 @@ class AdvertisementService:
             session_id=session_id,
         )
 
-    async def _determine_version(self) -> int:
+    async def _determine_version(self, slots: Sequence[str]) -> tuple[int, datetime | None]:
         # 选用素材、投放、广告位的最新更新时间戳作为版本号
         creative_ts = await self._session.execute(select(func.max(AdCreative.updated_at)))
         placement_ts = await self._session.execute(select(func.max(AdPlacement.updated_at)))
@@ -362,12 +372,62 @@ class AdvertisementService:
             slot_ts.scalar_one_or_none(),
         ]
         timestamps = [value for value in timestamps if value is not None]
-        if not timestamps:
-            return 0
-        latest = max(timestamps)
-        if latest.tzinfo is None:
-            latest = latest.replace(tzinfo=UTC)
-        return int(latest.timestamp())
+        now = datetime.now(tz=UTC)
+
+        if slots:
+            start_past = await self._session.execute(
+                select(func.max(AdCreative.start_time))
+                .join(AdPlacement, AdPlacement.creative_id == AdCreative.creative_id)
+                .where(AdPlacement.slot_code.in_(slots))
+                .where(AdCreative.start_time.is_not(None))
+                .where(AdCreative.start_time <= now)
+            )
+            end_past = await self._session.execute(
+                select(func.max(AdCreative.end_time))
+                .join(AdPlacement, AdPlacement.creative_id == AdCreative.creative_id)
+                .where(AdPlacement.slot_code.in_(slots))
+                .where(AdCreative.end_time.is_not(None))
+                .where(AdCreative.end_time <= now)
+            )
+            past_candidates = [start_past.scalar_one_or_none(), end_past.scalar_one_or_none()]
+            timestamps.extend([value for value in past_candidates if value is not None])
+
+        latest_ts = None
+        if timestamps:
+            latest_ts = max(timestamps)
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.replace(tzinfo=UTC)
+
+        next_change: datetime | None = None
+        if slots:
+            start_future = await self._session.execute(
+                select(func.min(AdCreative.start_time))
+                .join(AdPlacement, AdPlacement.creative_id == AdCreative.creative_id)
+                .where(AdPlacement.slot_code.in_(slots))
+                .where(AdCreative.start_time.is_not(None))
+                .where(AdCreative.start_time > now)
+            )
+            end_future = await self._session.execute(
+                select(func.min(AdCreative.end_time))
+                .join(AdPlacement, AdPlacement.creative_id == AdCreative.creative_id)
+                .where(AdPlacement.slot_code.in_(slots))
+                .where(AdCreative.end_time.is_not(None))
+                .where(AdCreative.end_time > now)
+            )
+            future_candidates = [
+                start_future.scalar_one_or_none(),
+                end_future.scalar_one_or_none(),
+            ]
+            future_candidates = [value for value in future_candidates if value is not None]
+            if future_candidates:
+                next_change = min(future_candidates)
+                if next_change.tzinfo is None:
+                    next_change = next_change.replace(tzinfo=UTC)
+
+        version = 0
+        if latest_ts is not None:
+            version = int(latest_ts.timestamp())
+        return version, next_change
 
     async def _load_active_creatives(
         self,
