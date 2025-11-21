@@ -99,6 +99,27 @@
         }
       }
     },
+    "/api/v1/config": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "获取公共配置",
+        "operationId": "fetch_public_config_api_v1_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicConfigSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/login": {
       "post": {
         "tags": [
@@ -1324,6 +1345,32 @@
         }
       }
     },
+    "/api/v1/orders/calculate-price": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "订单价格试算",
+        "operationId": "calculate_price_api_v1_orders_calculate_price_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderCalculateResponseSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/orders": {
       "post": {
         "tags": [
@@ -1332,7 +1379,7 @@
         "summary": "创建订单",
         "operationId": "create_order_api_v1_orders_post",
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -1556,6 +1603,63 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/admin/config/features/{feature_key}": {
+      "put": {
+        "tags": [
+          "admin-config"
+        ],
+        "summary": "更新功能开关",
+        "operationId": "update_feature_toggle_api_v1_admin_config_features__feature_key__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "feature_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Feature Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureToggleRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureToggleResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1998,6 +2102,51 @@
         ],
         "title": "AdminPaymentMatchResponseSchema"
       },
+      "CouponApplicabilitySchema": {
+        "properties": {
+          "coupon_id": {
+            "type": "integer",
+            "title": "Coupon Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "discount_amount": {
+            "type": "number",
+            "title": "Discount Amount"
+          },
+          "min_order_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Order Amount"
+          },
+          "is_applicable": {
+            "type": "boolean",
+            "title": "Is Applicable"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "coupon_id",
+          "type",
+          "discount_amount",
+          "is_applicable"
+        ],
+        "title": "CouponApplicabilitySchema",
+        "description": "优惠券使用信息"
+      },
       "CouponSchema": {
         "properties": {
           "coupon_id": {
@@ -2349,6 +2498,66 @@
           "distance_m"
         ],
         "title": "DeliveryCheckResponseSchema"
+      },
+      "FeatureToggleRequestSchema": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "FeatureToggleRequestSchema"
+      },
+      "FeatureToggleResponseSchema": {
+        "properties": {
+          "config_key": {
+            "type": "string",
+            "title": "Config Key"
+          },
+          "value": {
+            "type": "boolean",
+            "title": "Value"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "updated_by_admin_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Admin Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_key",
+          "value",
+          "updated_at"
+        ],
+        "title": "FeatureToggleResponseSchema"
       },
       "GuestSessionCreateRequestSchema": {
         "properties": {
@@ -2899,6 +3108,67 @@
         ],
         "title": "OpsAutoCancelResponseSchema"
       },
+      "OrderCalculateResponseSchema": {
+        "properties": {
+          "subtotal": {
+            "type": "number",
+            "title": "Subtotal"
+          },
+          "coupon_discount": {
+            "type": "number",
+            "title": "Coupon Discount",
+            "default": 0.0
+          },
+          "points_discount": {
+            "type": "number",
+            "title": "Points Discount",
+            "default": 0.0
+          },
+          "delivery_fee": {
+            "type": "number",
+            "title": "Delivery Fee",
+            "default": 0.0
+          },
+          "final_amount": {
+            "type": "number",
+            "title": "Final Amount"
+          },
+          "breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/PriceBreakdownItemSchema"
+            },
+            "type": "array",
+            "title": "Breakdown"
+          },
+          "coupon_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CouponApplicabilitySchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "points_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointsInfoSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "subtotal",
+          "final_amount"
+        ],
+        "title": "OrderCalculateResponseSchema",
+        "description": "价格试算响应"
+      },
       "OrderItemSchema": {
         "properties": {
           "item_id": {
@@ -3062,6 +3332,266 @@
           "status"
         ],
         "title": "PaymentNotifyResponseSchema"
+      },
+      "PointsInfoSchema": {
+        "properties": {
+          "available": {
+            "type": "integer",
+            "title": "Available"
+          },
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "discount": {
+            "type": "number",
+            "title": "Discount"
+          },
+          "exchange_rate": {
+            "type": "integer",
+            "title": "Exchange Rate",
+            "default": 100
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "used",
+          "discount"
+        ],
+        "title": "PointsInfoSchema",
+        "description": "积分抵扣信息"
+      },
+      "PriceBreakdownItemSchema": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price"
+          },
+          "specs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Specs"
+          },
+          "unit_price": {
+            "type": "number",
+            "title": "Unit Price"
+          },
+          "subtotal": {
+            "type": "number",
+            "title": "Subtotal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_name",
+          "quantity",
+          "base_price",
+          "specs",
+          "unit_price",
+          "subtotal"
+        ],
+        "title": "PriceBreakdownItemSchema",
+        "description": "单品价格明细"
+      },
+      "PublicAssetsSchema": {
+        "properties": {
+          "cdn_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cdn Base Url"
+          }
+        },
+        "type": "object",
+        "title": "PublicAssetsSchema"
+      },
+      "PublicConfigSchema": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Ttl Seconds",
+            "default": 600
+          },
+          "contact": {
+            "$ref": "#/components/schemas/PublicContactSchema"
+          },
+          "legal": {
+            "$ref": "#/components/schemas/PublicLegalSchema"
+          },
+          "ui": {
+            "$ref": "#/components/schemas/PublicUiSchema"
+          },
+          "assets": {
+            "$ref": "#/components/schemas/PublicAssetsSchema"
+          },
+          "features": {
+            "$ref": "#/components/schemas/PublicFeaturesSchema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "contact",
+          "legal",
+          "ui",
+          "assets",
+          "features"
+        ],
+        "title": "PublicConfigSchema"
+      },
+      "PublicContactSchema": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "business_hours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Hours"
+          },
+          "wechat_qr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wechat Qr"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "PublicContactSchema"
+      },
+      "PublicFeaturesSchema": {
+        "properties": {
+          "disable_delivery": {
+            "type": "boolean",
+            "title": "Disable Delivery",
+            "description": "紧急关闭外卖配送",
+            "default": false
+          },
+          "disable_coupons": {
+            "type": "boolean",
+            "title": "Disable Coupons",
+            "description": "临时关闭优惠券功能",
+            "default": false
+          },
+          "disable_stamps": {
+            "type": "boolean",
+            "title": "Disable Stamps",
+            "description": "临时关闭集点功能",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "PublicFeaturesSchema"
+      },
+      "PublicLegalSchema": {
+        "properties": {
+          "privacy_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privacy Url"
+          },
+          "terms_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Url"
+          }
+        },
+        "type": "object",
+        "title": "PublicLegalSchema"
+      },
+      "PublicUiSchema": {
+        "properties": {
+          "eta_fallback_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Fallback Text"
+          },
+          "order_confirm_tips": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Confirm Tips"
+          },
+          "pickup_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pickup Guide"
+          }
+        },
+        "type": "object",
+        "title": "PublicUiSchema"
       },
       "ShopFeaturesSchema": {
         "properties": {

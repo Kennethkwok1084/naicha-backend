@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_async_session
+from app.metrics.advertisements import ADS_CLICK_TOTAL, ADS_CONFIG_REQUEST_TOTAL, ADS_EXPOSE_TOTAL
 from app.schemas import AdConfigResponseSchema, AdTrackRequestSchema
 from app.services.advertisement import AdvertisementService
 
@@ -29,6 +30,13 @@ async def fetch_ad_config(
 ) -> AdConfigResponseSchema:
     slot_list = [slot.strip() for slot in slots.split(",") if slot.strip()]
     payload = await service.get_config(slots=slot_list, platform=platform, current_version=version)
+    
+    # 记录请求结果
+    if payload.version == version and not payload.slots:
+        ADS_CONFIG_REQUEST_TOTAL.labels(result="version_match").inc()
+    else:
+        ADS_CONFIG_REQUEST_TOTAL.labels(result="success").inc()
+    
     return payload
 
 
@@ -47,6 +55,7 @@ async def track_expose(
         user_id=body.user_id,
         session_id=body.session_id,
     )
+    ADS_EXPOSE_TOTAL.labels(slot=body.slot_code).inc()
 
 
 @router.post(
@@ -64,3 +73,4 @@ async def track_click(
         user_id=body.user_id,
         session_id=body.session_id,
     )
+    ADS_CLICK_TOTAL.labels(slot=body.slot_code).inc()

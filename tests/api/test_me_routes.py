@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.api.routes.me import list_addresses
@@ -8,6 +8,7 @@ from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import User, UserAddress
+from app.models.orders import Order, OrderItem
 from app.services.user import UserService
 from httpx import ASGITransport, AsyncClient
 
@@ -156,3 +157,93 @@ async def test_list_addresses_handler_direct(db_session) -> None:
 
     assert len(result) == 1
     assert result[0].contact_name == "李四"
+
+
+@pytest.mark.asyncio
+async def test_address_crud_endpoints(db_session) -> None:
+    user = User(user_id=501, open_id="openid-addr")
+    db_session.add(user)
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/v1/me/addresses",
+                headers=_auth_header(user.user_id),
+                json={
+                    "contact_name": "王五",
+                    "phone": "13700000000",
+                    "address_line": "杭州市西湖区",
+                    "is_default": True,
+                },
+            )
+            assert create_resp.status_code == 201
+            address_id = create_resp.json()["address_id"]
+
+            update_resp = await client.put(
+                f"/api/v1/me/addresses/{address_id}",
+                headers=_auth_header(user.user_id),
+                json={"phone": "13711112222"},
+            )
+            assert update_resp.status_code == 200
+            assert update_resp.json()["phone"] == "13711112222"
+
+            delete_resp = await client.delete(
+                f"/api/v1/me/addresses/{address_id}",
+                headers=_auth_header(user.user_id),
+            )
+            assert delete_resp.status_code == 204
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_my_orders_and_stamps(db_session) -> None:
+    user = User(user_id=601, open_id="openid-orders")
+    db_session.add(user)
+    await db_session.flush()
+
+    order = Order(
+        order_id=9001,
+        order_number="TEST-ORDER-1",
+        user_id=user.user_id,
+        total_price=10,
+        status="paid",
+        order_type="pickup",
+        payment_status="paid",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(timezone.utc),
+        pickup_code="123456",
+    )
+    item = OrderItem(
+        item_id=1,
+        order_id=order.order_id,
+        product_id=1,
+        product_name="测试饮品",
+        quantity=1,
+        unit_price=10,
+        selected_specs_json=[],
+    )
+    db_session.add_all([order, item])
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            orders_resp = await client.get(
+                "/api/v1/me/orders",
+                headers=_auth_header(user.user_id),
+            )
+            assert orders_resp.status_code == 200
+            assert len(orders_resp.json()) >= 1
+            stamps_resp = await client.get(
+                "/api/v1/me/stamps", headers=_auth_header(user.user_id)
+            )
+            assert stamps_resp.status_code == 200
+            assert stamps_resp.json()["total_completed_orders"] >= 0
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)

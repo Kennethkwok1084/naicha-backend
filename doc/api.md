@@ -946,8 +946,107 @@
 - **变更历史**：
   - 2025-10-27：首次发布
 
+### 订单价格试算
+- **状态**：新增 （日期：2025-10-31）；更新（日期：2025-11-08，增加 ETA 字段与别名）
+- **路径/方法**：`POST /api/v1/orders/calculate-price`（别名：`POST /api/v1/orders/preview`）
+- **权限**：用户 JWT | 游客（未登录状态下无法使用优惠券/积分）
+- **幂等要求**：否（纯读操作）
+- **限流**：SlowAPI `60 req/min/IP`
+- **请求体**：
+```json
+{
+  "items": [
+    {
+      "product_id": 101,
+      "quantity": 2,
+      "spec_option_ids": [1001, 1002]
+    }
+  ],
+  "coupon_id": 12345,
+  "points_use": 200,
+  "order_type": "delivery",
+  "address": {
+    "province": "广东省",
+    "city": "深圳市",
+    "district": "南山区",
+    "detail": "科技园XXX"
+  }
+}
+```
+- **请求字段说明**：
+  - `items`：与创建订单一致，最多 30 条。
+  - `coupon_id`：可选，仅登录用户可用，服务端验证适用性但不核销。
+  - `points_use`：可选，使用积分数量，整数且 `0 <= points_use <= 可用积分`，最多抵扣应付金额的 30%（100 积分=1元）。
+  - `order_type`：`pickup` / `delivery` / `dine_in`，当为 `delivery` 时必须提供 `address`。
+  - `address`：配送地址结构化字段，仅在 `delivery` 场景必填。
+- **响应体**：
+```json
+{
+  "subtotal": 36.0,
+  "coupon_discount": 5.0,
+  "points_discount": 1.0,
+  "delivery_fee": 6.0,
+  "final_amount": 36.0,
+  "breakdown": [
+    {
+      "product_id": 101,
+      "product_name": "珍珠奶茶",
+      "quantity": 2,
+      "base_price": 15.0,
+      "specs": [
+        {"option_id": 5, "option_name": "椰果", "price_modifier": 3.0}
+      ],
+      "unit_price": 18.0,
+      "subtotal": 36.0
+    }
+  ],
+  "coupon_info": {
+    "coupon_id": 12345,
+    "type": "amount_off",
+    "discount_amount": 5.0,
+    "min_order_amount": 20.0,
+    "is_applicable": true,
+    "reason": ""
+  },
+  "points_info": {
+    "available": 500,
+    "used": 100,
+    "discount": 1.0,
+    "exchange_rate": 100
+  },
+  "eta_minutes": 20,
+  "eta_text": "约 20 分钟"
+}
+```
+- **响应说明**：
+  - `subtotal`：商品金额（含规格），未扣减优惠。
+  - `coupon_discount`：优惠券抵扣金额，最小为 0。
+  - `points_discount`：积分抵扣金额，最多为 `0.3 * (subtotal - coupon_discount)`。
+  - `delivery_fee`：`delivery` 且金额 < 30 收取 6 元，否则 0。
+  - `final_amount = max(0, subtotal - coupon_discount - points_discount + delivery_fee)`。
+  - `breakdown`：逐品项明细，含规格及单价。
+  - `coupon_info`：优惠券适配结果，不适用时 `is_applicable=false` 并在 `reason` 中说明原因。
+  - `points_info`：积分余额与实际抵扣，登录用户即使未使用积分也会返回可用余额。
+  - `eta_minutes` / `eta_text`：预计等待/送达时间，按商品数量与配送方式估算。
+- **错误码**：
+  - 400 商品不存在 / 下架 / 库存不足。
+  - 400 未登录却传入 `coupon_id` / `points_use`。
+  - 400 优惠券不存在、未达到门槛或类型不支持。
+  - 400 配送单未提供地址。
+- **副作用**：无（不写库、不扣库存、不核销优惠券）
+- **审计记录**：不记录
+- **观测指标**：待补（可追加 `order_calculate_price_latency_ms`）
+- **测试清单**：
+  - [x] 基础计算（含规格）
+  - [x] 优惠券（可用 / 不可用）
+  - [x] 积分限额（30% 上限）
+  - [x] 配送费（未满 30 收费、满 30 免配送）
+  - [ ] 性能阈值（P95 < 50ms）
+- **变更历史**：
+  - 2025-10-31：首次发布
+
 ### 创建订单
-- **状态**：新增 （日期：2025-10-17）
+- **状态**：新增 （日期：2025-10-17）；更新（日期：2025-11-08，新增 ETA 与取餐码字段）
 - **路径/方法**：`POST /api/v1/orders`
 - **权限**：用户 JWT | 游客（需有效 `guest_session_id`）
 - **幂等要求**：是 (`Idempotency-Key` 请求头)
@@ -978,6 +1077,9 @@
 ```
 - **请求字段说明**：
   - `coupon_id` (可选): 优惠券ID，仅登录用户可用。使用 `free_any_drink` 类型优惠券时，自动免除订单中最便宜的一杯价格。
+- **响应字段补充**：
+  - `eta_minutes` / `eta_text`：下单时的预计等待/送达时间。
+  - `pickup_code`：取餐码（自取/前台核验展示）。
 - **响应体**：
 ```json
 {
@@ -990,6 +1092,9 @@
   "is_scheduled": true,
   "scheduled_at": "2025-10-21T01:30:00+00:00",
   "reminder_sent_at": null,
+  "eta_minutes": 25,
+  "eta_text": "预计 2025-10-21T01:30:00+00:00",
+  "pickup_code": "238901",
   "items": [
     {
       "item_id": 12345,
@@ -1032,6 +1137,51 @@
 - **变更历史**：
   - 2025-10-17：首次发布
   - 2025-10-24：支持预约下单（`scheduled_at` 字段，需携带时区；仅 pickup，当日+提前 15 分钟）
+  - 2025-11-08：返回 ETA（分钟+文案）与取餐码
+
+### 获取订单详情
+- **状态**：新增 （日期：2025-11-08）
+- **路径/方法**：`GET /api/v1/orders/{order_id}`
+- **权限**：用户 JWT | 游客（需提供 `guest_session_id`）
+- **幂等要求**：是
+- **响应体**：`OrderResponseSchema`（含 `eta_minutes`、`eta_text`、`pickup_code`）
+- **错误码**：404 订单不存在；403 无权访问
+- **副作用**：无
+
+### 获取我的订单列表
+- **状态**：新增 （日期：2025-11-08）
+- **路径/方法**：`GET /api/v1/me/orders`
+- **权限**：用户 JWT
+- **查询参数**：`limit`（默认20，1-100）、`offset`（默认0，>=0）
+- **响应体**：`OrderResponseSchema` 列表（含 ETA、取餐码）
+- **错误码**：401 未登录
+- **副作用**：无
+
+### 地址簿管理
+- **状态**：新增 （日期：2025-11-08）
+- **路径/方法**：
+  - `POST /api/v1/me/addresses` 创建
+  - `PUT /api/v1/me/addresses/{id}` 更新
+  - `DELETE /api/v1/me/addresses/{id}` 删除
+- **权限**：用户 JWT
+- **说明**：首次创建自动设为默认；设置 `is_default=true` 会清空其它默认地址；删除默认地址时自动择一补位。
+- **错误码**：404 地址不存在（更新/删除）
+- **副作用**：写库 `user_addresses`
+
+### 集点进度
+- **状态**：新增 （日期：2025-11-08）
+- **路径/方法**：`GET /api/v1/me/stamps`
+- **权限**：用户 JWT
+- **响应体** 示例：
+```json
+{
+  "total_completed_orders": 12,
+  "stamps_in_cycle": 2,
+  "rewards_available": 1,
+  "cycle_size": 10
+}
+```
+- **说明**：简化版“集10送1”，基于已支付/制作中的订单数推算。
 
 ### 提交「想要」事件
 - **状态**：新增 （日期：2025-10-24）
@@ -1488,3 +1638,74 @@
   - [x] 非法参数校验
 - **变更历史**：
   - 2025-10-21：首次发布（M4）
+
+### 获取公共配置
+- **状态**：新增 （日期：2025-11-08）
+- **路径/方法**：`GET /api/v1/config`
+- **权限**：公开
+- **幂等要求**：是
+- **限流**：建议 WAF 300 req/min/IP
+- **请求体**：无
+- **响应体**：
+```json
+{
+  "version": "1.0.0",
+  "ttl_seconds": 600,
+  "contact": {"phone": "13800001234", "business_hours": "09:00-21:00"},
+  "legal": {"privacy_url": "https://guajunyan.top/privacy.html"},
+  "features": {
+    "disable_delivery": false,
+    "disable_coupons": false,
+    "disable_stamps": false
+  },
+  "ui": {"eta_fallback_text": "前方排队制作中，预计等待时间请留意通知"},
+  "assets": {"cdn_base_url": null}
+}
+```
+- **错误码**：
+  - 503 公共配置文件不存在。—— 部署缺少 `app/data/app_config.json`
+  - 503 公共配置文件格式错误。—— JSON 解析失败或根节点非对象
+- **副作用**：读取/写入 Redis 缓存（命中 5 分钟）
+- **审计记录**：否
+- **观测指标**：待补（建议追加 `public_config_fetch_total`）
+- **测试清单**：
+  - [x] 合并数据库 features 覆盖静态值
+  - [ ] 缓存命中/失效
+  - [ ] TTL 透传
+- **变更历史**：
+  - 2025-11-08：首次发布
+
+### 更新功能开关
+- **状态**：新增 （日期：2025-11-08）
+- **路径/方法**：`PUT /api/v1/admin/config/features/{feature_key}`
+- **权限**：管理员（角色 admin/manager）
+- **幂等要求**：是（同一 key 多次写入覆盖）
+- **限流**：建议 60 req/min/账号
+- **请求体**：
+```json
+{
+  "enabled": true,
+  "reason": "台风天气临时关闭配送"
+}
+```
+- **响应体**：
+```json
+{
+  "config_key": "features.disable_delivery",
+  "value": true,
+  "updated_at": "2025-11-08T10:30:00Z",
+  "updated_by_admin_id": 1
+}
+```
+- **错误码**：
+  - 400 不支持的功能开关键。—— `feature_key` 不在 {disable_delivery, disable_coupons, disable_stamps}
+  - 403 当前账号无权更新配置。—— 非 admin/manager
+- **副作用**：写库 `shop_config`；删除 Redis 缓存 key
+- **审计记录**：暂不写入
+- **观测指标**：待补（建议 `feature_toggle_total`）
+- **测试清单**：
+  - [x] 写库并清除缓存
+  - [ ] 角色拦截
+  - [ ] 参数校验（reason 长度）
+- **变更历史**：
+  - 2025-11-08：首次发布

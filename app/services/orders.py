@@ -7,7 +7,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import insert, select
@@ -16,6 +16,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
+from structlog import get_logger
 from app.metrics.inventory import (
     INVENTORY_CURRENT_STOCK,
     INVENTORY_DEDUCTION_TOTAL,
@@ -30,6 +31,7 @@ from app.models.accounts import Coupon, User
 from app.models.catalog import Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import AuditLog, IdempotencyKey, Order, OrderItem
 from app.schemas.order import (
+    OrderCalculateRequestSchema,
     OrderCreateRequestSchema,
     OrderPaymentJsapiRequestSchema,
     OrderPaymentNativeRequestSchema,
@@ -66,6 +68,110 @@ class OrderService:
     def __init__(self, session: AsyncSession, settings: Settings):
         self._session = session
         self._settings = settings
+        self._logger = get_logger(__name__)
+
+    async def calculate_price_only(
+        self,
+        *,
+        payload: OrderCalculateRequestSchema,
+        user: User | None,
+    ) -> dict[str, Any]:
+        """
+        仅进行价格计算, 不产生任何写操作/副作用。
+        """
+        if not payload.items:
+            raise OrderValidationError("订单至少包含一件商品。")
+        if payload.order_type == "delivery" and payload.address is None:
+            raise OrderValidationError("Delivery order requires address.")
+        if payload.coupon_id and user is None:
+            raise OrderValidationError("登录后才能使用优惠券。")
+        if payload.points_use and user is None:
+            raise OrderValidationError("登录后才能使用积分。")
+
+        products, product_groups = await self._load_products_with_groups(payload.items, lock=False)
+        specs_lookup = await self._load_spec_options(payload.items, lock=False)
+
+        breakdown: list[dict[str, Any]] = []
+        subtotal = Decimal("0.00")
+        line_unit_prices: list[Decimal] = []
+        item_count = 0
+
+        for item in payload.items:
+            product = products.get(item.product_id)
+            if product is None:
+                raise OrderValidationError(f"Product {item.product_id} not found.")
+            if product.status != "active":
+                raise OrderValidationError(f"Product {item.product_id} is inactive.")
+            if product.inventory_status != "in_stock":
+                raise OrderValidationError(f"Product {item.product_id} is sold out.")
+            remaining_stock = getattr(product, "stock_quantity", None)
+            if remaining_stock is not None and remaining_stock < item.quantity:
+                raise OrderValidationError(f"Product {item.product_id} is sold out.")
+
+            allowed_groups = product_groups.get(item.product_id, set())
+            selected_specs, modifiers_total = self._pick_spec_options(
+                item.spec_option_ids,
+                specs_lookup,
+                allowed_groups,
+                item.product_id,
+            )
+
+            unit_price = self._calculate_unit_price(product.base_price, modifiers_total)
+            line_total = self._quantize_currency(unit_price * item.quantity)
+            subtotal += line_total
+            line_unit_prices.append(unit_price)
+            item_count += item.quantity
+
+            base_price = self._quantize_currency(Decimal(str(product.base_price)))
+            breakdown.append(
+                {
+                    "product_id": product.product_id,
+                    "product_name": product.name,
+                    "quantity": item.quantity,
+                    "base_price": float(base_price),
+                    "specs": selected_specs,
+                    "unit_price": float(unit_price),
+                    "subtotal": float(line_total),
+                }
+            )
+
+        subtotal = self._quantize_currency(subtotal)
+        coupon_discount, coupon_info = await self._calculate_coupon(
+            payload.coupon_id,
+            subtotal,
+            user,
+            line_unit_prices=line_unit_prices,
+        )
+        payable_after_coupon = max(Decimal("0.00"), subtotal - coupon_discount)
+        points_discount, points_info = self._calculate_points(
+            payload.points_use,
+            payable_after_coupon,
+            user,
+        )
+        delivery_fee = self._calculate_delivery_fee(payload.order_type, subtotal)
+        final_amount = self._quantize_currency(
+            max(Decimal("0.00"), subtotal - coupon_discount - points_discount + delivery_fee)
+        )
+        eta_minutes = self._estimate_eta_minutes(
+            payload.order_type,
+            item_count=item_count,
+            is_scheduled=False,
+            scheduled_at=None,
+        )
+        eta_text = self._format_eta_text(eta_minutes, scheduled_at=None)
+
+        return {
+            "subtotal": float(subtotal),
+            "coupon_discount": float(coupon_discount),
+            "points_discount": float(points_discount),
+            "delivery_fee": float(delivery_fee),
+            "final_amount": float(final_amount),
+            "breakdown": breakdown,
+            "coupon_info": coupon_info,
+            "points_info": points_info,
+            "eta_minutes": eta_minutes,
+            "eta_text": eta_text,
+        }
 
     async def create_order(
         self,
@@ -75,6 +181,10 @@ class OrderService:
         user: User | None,
         post_create: Callable[[Order, list[OrderItem]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
+        self._logger.debug(
+            "orders.create_order.session_state",
+            in_transaction=self._session.in_transaction(),
+        )
         if not idempotency_key.strip():
             raise OrderValidationError("Idempotency-Key header is required.")
 
@@ -87,11 +197,13 @@ class OrderService:
         payload_dict = payload.model_dump(mode="json")
         payload_hash = self._hash_payload(payload_dict)
 
-        started_transaction = False
+        tx = self._session.get_transaction()
+        tx_parent = getattr(tx, "_parent", None) if tx is not None else None
+        started_transaction = tx is None
+        inherited_transaction_needs_commit = tx is not None and tx_parent is None
         try:
-            if not self._session.in_transaction():
+            if started_transaction:
                 await self._session.begin()
-                started_transaction = True
 
             result = await self._create_order_internal(
                 payload=payload,
@@ -102,15 +214,15 @@ class OrderService:
                 post_create=post_create,
             )
 
-            if started_transaction:
+            if started_transaction or inherited_transaction_needs_commit:
                 await self._session.commit()
         except OrderServiceError:
-            if started_transaction and self._session.in_transaction():
+            if (started_transaction or inherited_transaction_needs_commit) and self._session.in_transaction():
                 await self._session.rollback()
             ORDER_CREATE_TOTAL.labels(result="service_error").inc()
             raise
         except Exception:
-            if started_transaction and self._session.in_transaction():
+            if (started_transaction or inherited_transaction_needs_commit) and self._session.in_transaction():
                 await self._session.rollback()
             ORDER_CREATE_TOTAL.labels(result="unexpected_error").inc()
             raise
@@ -212,6 +324,7 @@ class OrderService:
             guest_session_id,
             reservation_plan=reservation_plan,
         )
+        item_count_total = sum(item.quantity for item in payload.items)
         
         # 应用优惠券折扣
         if payload.coupon_id and user:
@@ -261,6 +374,7 @@ class OrderService:
                 Order.scheduled_at,
                 Order.reminder_sent_at,
                 Order.created_at,
+                Order.pickup_code,
             )
         )
         order_result = await self._session.execute(order_stmt)
@@ -326,9 +440,13 @@ class OrderService:
                 select(OrderItem).where(OrderItem.order_id == order_id)
             )
             order_items_entities = list(refreshed_items_result.scalars().all())
-            response_payload = self._build_order_response(order_entity, order_items_entities)
+            response_payload = self._build_order_response(
+                order_entity, order_items_entities, item_count_override=item_count_total
+            )
         else:
-            response_payload = self._build_order_response_from_row(order_row, response_items)
+            response_payload = self._build_order_response_from_row(
+                order_row, response_items, item_count_override=item_count_total
+            )
         idempotency_record.response_snapshot = response_payload
 
         return response_payload
@@ -466,7 +584,9 @@ class OrderService:
             raise OrderValidationError("Guest session has expired.")
 
     async def _load_products_with_groups(
-        self, items
+        self,
+        items,
+        lock: bool = True,
     ) -> tuple[dict[int, Product], dict[int, set[int]]]:
         """
         批量加载商品及允许的规格组。
@@ -477,11 +597,9 @@ class OrderService:
         if not product_ids:
             return {}, {}
 
-        products_stmt = (
-            select(Product)
-            .where(Product.product_id.in_(product_ids))
-            .with_for_update(of=Product)
-        )
+        products_stmt = select(Product).where(Product.product_id.in_(product_ids))
+        if lock:
+            products_stmt = products_stmt.with_for_update(of=Product)
         products_result = await self._session.execute(products_stmt)
         products_list = list(products_result.scalars().all())
 
@@ -497,16 +615,18 @@ class OrderService:
                 product_groups.setdefault(mapping.product_id, set()).add(mapping.group_id)
         return products, product_groups
 
-    async def _load_spec_options(self, items) -> dict[int, tuple[SpecOption, SpecGroup | None]]:
+    async def _load_spec_options(
+        self,
+        items,
+        lock: bool = True,
+    ) -> dict[int, tuple[SpecOption, SpecGroup | None]]:
         option_ids = {option_id for item in items for option_id in item.spec_option_ids}
         if not option_ids:
             return {}
 
-        options_stmt = (
-            select(SpecOption)
-            .where(SpecOption.option_id.in_(option_ids))
-            .with_for_update(of=SpecOption)
-        )
+        options_stmt = select(SpecOption).where(SpecOption.option_id.in_(option_ids))
+        if lock:
+            options_stmt = options_stmt.with_for_update(of=SpecOption)
         options_result = await self._session.execute(options_stmt)
         options_list = list(options_result.scalars().all())
 
@@ -534,12 +654,14 @@ class OrderService:
         reservation_plan,
     ) -> dict[str, Any]:
         order_number = self._generate_order_number()
+        pickup_code = self._generate_pickup_code()
         address_json = payload.address.model_dump() if payload.address else None
         scheduled_at = reservation_plan.scheduled_at_utc if reservation_plan else None
         reservation_slot_id = reservation_plan.slot_id if reservation_plan else None
 
         return {
             "order_number": order_number,
+            "pickup_code": pickup_code,
             "user_id": user.user_id if user else None,
             "guest_session_id": None if user else guest_session_id,
             "total_price": Decimal("0.00"),
@@ -596,10 +718,174 @@ class OrderService:
 
         return selected_specs, total_modifier
 
+    async def _calculate_coupon(
+        self,
+        coupon_id: int | None,
+        subtotal: Decimal,
+        user: User | None,
+        *,
+        line_unit_prices: list[Decimal],
+    ) -> tuple[Decimal, dict[str, Any] | None]:
+        if coupon_id is None:
+            return Decimal("0.00"), None
+        if user is None:
+            raise OrderValidationError("登录后才能使用优惠券。")
+
+        stmt = select(Coupon).where(
+            Coupon.coupon_id == coupon_id,
+            Coupon.user_id == user.user_id,
+            Coupon.status == "active",
+        )
+        result = await self._session.execute(stmt)
+        coupon = result.scalar_one_or_none()
+        if coupon is None:
+            raise OrderValidationError("优惠券不存在、已使用或不属于当前用户")
+
+        coupon_type = coupon.type
+        meta = coupon.meta_json or {}
+
+        min_amount_value = meta.get("min_order_amount")
+        min_order_amount = (
+            self._quantize_currency(Decimal(str(min_amount_value)))
+            if min_amount_value is not None
+            else None
+        )
+
+        discount = Decimal("0.00")
+        applicable = True
+        reason = ""
+
+        if coupon_type == "amount_off":
+            raw_discount = self._quantize_currency(Decimal(str(meta.get("discount_amount", "0"))))
+            if min_order_amount is not None and subtotal < min_order_amount:
+                applicable = False
+                reason = f"订单金额需满 {min_order_amount} 元"
+                raw_discount = Decimal("0.00")
+            discount = min(raw_discount, subtotal)
+        elif coupon_type == "percentage_off":
+            percentage = Decimal(str(meta.get("discount_percentage", "0")))
+            max_discount = self._quantize_currency(
+                Decimal(str(meta.get("max_discount_amount", str(subtotal))))
+            )
+            discount = subtotal * (percentage / Decimal("100"))
+            discount = min(discount, max_discount, subtotal)
+        elif coupon_type == "free_any_drink":
+            if line_unit_prices:
+                discount = min(line_unit_prices)
+        else:
+            applicable = False
+            reason = "暂不支持的优惠券类型"
+            discount = Decimal("0.00")
+
+        discount = self._quantize_currency(discount)
+        if not applicable:
+            discount = Decimal("0.00")
+
+        coupon_info = {
+            "coupon_id": coupon.coupon_id,
+            "type": coupon_type,
+            "discount_amount": float(discount),
+            "min_order_amount": float(min_order_amount) if min_order_amount is not None else None,
+            "is_applicable": applicable,
+            "reason": reason,
+        }
+        return discount, coupon_info
+
+    def _calculate_points(
+        self,
+        requested_points: int,
+        payable_amount: Decimal,
+        user: User | None,
+    ) -> tuple[Decimal, dict[str, Any] | None]:
+        if user is None:
+            if requested_points > 0:
+                raise OrderValidationError("登录后才能使用积分。")
+            return Decimal("0.00"), None
+
+        available_points = int(user.loyalty_points or 0)
+        info: dict[str, Any] = {
+            "available": available_points,
+            "used": 0,
+            "discount": 0.0,
+            "exchange_rate": 100,
+        }
+        if requested_points <= 0 or available_points <= 0:
+            return Decimal("0.00"), info
+
+        cap_points = (
+            max(payable_amount, Decimal("0.00")) * Decimal("0.3") * Decimal("100")
+        ).to_integral_value(rounding=ROUND_DOWN)
+        max_points_cap = max(0, int(cap_points))
+        actual_points = min(requested_points, available_points, max_points_cap)
+        discount = self._quantize_currency(Decimal(actual_points) / Decimal("100"))
+        info["used"] = actual_points
+        info["discount"] = float(discount)
+        return discount, info
+
+    def _calculate_delivery_fee(self, order_type: str, subtotal: Decimal) -> Decimal:
+        if order_type != "delivery":
+            return Decimal("0.00")
+        if subtotal >= Decimal("30.00"):
+            fee = Decimal("0.00")
+        else:
+            fee = Decimal("6.00")
+        return self._quantize_currency(fee)
+
     @staticmethod
     def _calculate_unit_price(base_price, modifiers: Decimal) -> Decimal:
         base = Decimal(base_price)
         return (base + modifiers).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @staticmethod
+    def _quantize_currency(amount: Decimal) -> Decimal:
+        return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def _estimate_eta_minutes(
+        self,
+        order_type: str,
+        *,
+        item_count: int,
+        is_scheduled: bool,
+        scheduled_at: datetime | None,
+    ) -> int | None:
+        base = 8 + max(item_count - 1, 0) * 2
+        if order_type == "delivery":
+            base += 10
+
+        eta = base
+        now = datetime.now(tz=UTC)
+        if scheduled_at is not None:
+            sched = scheduled_at
+            if sched.tzinfo is None or sched.tzinfo.utcoffset(sched) is None:
+                sched = sched.replace(tzinfo=UTC)
+            diff_minutes = max(int((sched - now).total_seconds() // 60), 0)
+            if is_scheduled:
+                eta = max(diff_minutes, eta)
+
+        return max(int(eta), 1)
+
+    def _format_eta_text(self, eta_minutes: int | None, scheduled_at: datetime | None) -> str | None:
+        if eta_minutes is None:
+            return None
+        if scheduled_at is not None:
+            sched = scheduled_at
+            if sched.tzinfo is None or sched.tzinfo.utcoffset(sched) is None:
+                sched = sched.replace(tzinfo=UTC)
+            return f"预计 {sched.astimezone(UTC).isoformat()}"
+        return f"约 {eta_minutes} 分钟"
+
+    def _estimate_eta_for_order(self, order, item_count: int) -> tuple[int | None, str | None]:
+        eta_minutes = self._estimate_eta_minutes(
+            getattr(order, "order_type", "pickup"),
+            item_count=item_count,
+            is_scheduled=bool(getattr(order, "is_scheduled", False)),
+            scheduled_at=getattr(order, "scheduled_at", None),
+        )
+        eta_text = self._format_eta_text(
+            eta_minutes if eta_minutes is not None else None,
+            getattr(order, "scheduled_at", None) if getattr(order, "is_scheduled", False) else None,
+        )
+        return eta_minutes, eta_text
 
     def _ensure_order_access(
         self,
@@ -709,6 +995,60 @@ class OrderService:
 
         return True
 
+    async def get_order_detail(
+        self,
+        order_id: int,
+        actor: User | None,
+        *,
+        guest_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        stmt = select(Order).where(Order.order_id == order_id)
+        result = await self._session.execute(stmt)
+        order = result.scalar_one_or_none()
+        if order is None:
+            raise OrderNotFoundError("Order not found.")
+
+        self._ensure_order_access(order, actor, guest_session_id)
+
+        items_result = await self._session.execute(
+            select(OrderItem).where(OrderItem.order_id == order.order_id)
+        )
+        items = list(items_result.scalars().all())
+        return self._build_order_response(order, items)
+
+    async def list_orders(
+        self,
+        actor: User,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        stmt = (
+            select(Order)
+            .where(Order.user_id == actor.user_id)
+            .order_by(Order.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self._session.execute(stmt)
+        orders = list(result.scalars().all())
+        if not orders:
+            return []
+
+        order_ids = [order.order_id for order in orders]
+        items_result = await self._session.execute(
+            select(OrderItem).where(OrderItem.order_id.in_(order_ids))
+        )
+        items = list(items_result.scalars().all())
+        item_map: dict[int, list[OrderItem]] = {}
+        for item in items:
+            item_map.setdefault(item.order_id, []).append(item)
+
+        responses: list[dict[str, Any]] = []
+        for order in orders:
+            responses.append(self._build_order_response(order, item_map.get(order.order_id, [])))
+        return responses
+
     async def cancel_stale_pending_orders(
         self,
         cutoff: datetime,
@@ -742,7 +1082,12 @@ class OrderService:
         self,
         order: Order,
         items: list[OrderItem],
+        *,
+        item_count_override: int | None = None,
     ) -> dict[str, Any]:
+        eta_minutes, eta_text = self._estimate_eta_for_order(
+            order, item_count_override or sum(item.quantity for item in items)
+        )
         return {
             "order_id": order.order_id,
             "order_number": order.order_number,
@@ -753,6 +1098,9 @@ class OrderService:
             "is_scheduled": order.is_scheduled,
             "scheduled_at": self._serialize_datetime(order.scheduled_at),
             "reminder_sent_at": self._serialize_datetime(order.reminder_sent_at),
+            "eta_minutes": eta_minutes,
+            "eta_text": eta_text,
+            "pickup_code": order.pickup_code,
             "items": [
                 {
                     "item_id": item.item_id,
@@ -770,7 +1118,12 @@ class OrderService:
         self,
         order_row,
         items: list[dict[str, Any]],
+        *,
+        item_count_override: int | None = None,
     ) -> dict[str, Any]:
+        eta_minutes, eta_text = self._estimate_eta_for_order(
+            order_row, item_count_override or sum(item.get("quantity", 0) for item in items)
+        )
         return {
             "order_id": order_row.order_id,
             "order_number": order_row.order_number,
@@ -781,6 +1134,9 @@ class OrderService:
             "is_scheduled": bool(order_row.is_scheduled),
             "scheduled_at": self._serialize_datetime(order_row.scheduled_at),
             "reminder_sent_at": self._serialize_datetime(order_row.reminder_sent_at),
+            "eta_minutes": eta_minutes,
+            "eta_text": eta_text,
+            "pickup_code": getattr(order_row, "pickup_code", None),
             "items": items,
         }
 
@@ -796,6 +1152,11 @@ class OrderService:
         millis = int(now.microsecond / 1000)
         random_suffix = secrets.token_hex(3).upper()
         return f"{timestamp}{millis:03d}-NA{random_suffix}"
+
+    @staticmethod
+    def _generate_pickup_code() -> str:
+        alphabet = "0123456789"
+        return "".join(secrets.choice(alphabet) for _ in range(6))
 
     @staticmethod
     def _serialize_datetime(value: datetime | None) -> str | None:

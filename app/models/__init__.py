@@ -19,7 +19,7 @@ from app.models.orders import (
     WantEvent,
 )
 from app.models.reservations import ReservationSlot
-from app.models.shop import ShopProfile, ShopSetting
+from app.models.shop import ShopConfig, ShopProfile, ShopSetting
 
 __all__ = [
     "AdCreative",
@@ -41,6 +41,7 @@ __all__ = [
     "ProductCategory",
     "ProductSpecMapping",
     "ReservationSlot",
+    "ShopConfig",
     "ShopProfile",
     "ShopSetting",
     "SpecGroup",

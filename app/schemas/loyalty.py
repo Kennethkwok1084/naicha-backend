@@ -55,3 +55,12 @@ class CouponsResponseSchema(BaseModel):
 
     coupons: list[CouponSchema]
     stats: CouponStatsSchema
+
+
+class StampStatusSchema(BaseModel):
+    """集点状态"""
+
+    total_completed_orders: int
+    stamps_in_cycle: int
+    rewards_available: int
+    cycle_size: int = 10

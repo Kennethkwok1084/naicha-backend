@@ -26,7 +26,9 @@ async def test_shop_profile_returns_snapshot(db_session, tmp_path) -> None:
     profile_file.write_text(json.dumps(snapshot), encoding="utf-8")
 
     base_settings = get_settings()
-    test_settings = base_settings.model_copy(update={"shop_profile_file": str(profile_file)})
+    test_settings = base_settings.model_copy(
+        update={"shop_profile_file": str(profile_file), "shop_profile_cache_url": None}
+    )
 
     async def override_get_shop_service() -> ShopService:
         return ShopService(db_session, test_settings)
@@ -114,7 +116,9 @@ async def test_shop_profile_missing_snapshot(db_session, tmp_path) -> None:
     profile_file = tmp_path / "shop_profile.json"
 
     base_settings = get_settings()
-    test_settings = base_settings.model_copy(update={"shop_profile_file": str(profile_file)})
+    test_settings = base_settings.model_copy(
+        update={"shop_profile_file": str(profile_file), "shop_profile_cache_url": None}
+    )
 
     async def override_get_shop_service() -> ShopService:
         return ShopService(db_session, test_settings)

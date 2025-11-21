@@ -1,20 +1,30 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import get_current_user
 from app.core.settings import Settings, get_settings
 from app.db.session import get_async_session
+from app.metrics.users import (
+    USER_ADDRESSES_REQUEST_TOTAL,
+    USER_COUPONS_REQUEST_TOTAL,
+    USER_PROFILE_REQUEST_TOTAL,
+)
 from app.models.accounts import User
 from app.schemas import (
     CouponsResponseSchema,
     LoyaltyTransactionsResponseSchema,
+    OrderResponseSchema,
+    StampStatusSchema,
+    UserAddressCreateSchema,
     UserAddressSchema,
+    UserAddressUpdateSchema,
     UserProfileSchema,
 )
 from app.schemas.loyalty import CouponSchema, LoyaltyTransactionSchema
 from app.services.loyalty import LoyaltyService
+from app.services.orders import OrderService
 from app.services.user import UserService
 
 router = APIRouter(prefix="/api/v1/me", tags=["me"])
@@ -22,6 +32,13 @@ router = APIRouter(prefix="/api/v1/me", tags=["me"])
 
 async def get_user_service(session: AsyncSession = Depends(get_async_session)) -> UserService:
     return UserService(session)
+
+
+async def get_order_service(
+    session: AsyncSession = Depends(get_async_session),
+    settings: Settings = Depends(get_settings),
+) -> OrderService:
+    return OrderService(session, settings)
 
 
 async def get_loyalty_service(
@@ -33,6 +50,7 @@ async def get_loyalty_service(
 
 @router.get("/profile", response_model=UserProfileSchema, summary="获取当前用户资料")
 async def get_profile(current_user: User = Depends(get_current_user)) -> UserProfileSchema:
+    USER_PROFILE_REQUEST_TOTAL.labels(result="success").inc()
     return UserProfileSchema(
         user_id=current_user.user_id,
         nickname=current_user.nickname,
@@ -46,21 +64,64 @@ async def list_addresses(
     current_user: User = Depends(get_current_user),
     service: UserService = Depends(get_user_service),
 ) -> list[UserAddressSchema]:
-    addresses = await service.list_addresses(current_user.user_id)
-    return [
-        UserAddressSchema(
-            address_id=address.address_id,
-            contact_name=address.contact_name,
-            phone=address.phone,
-            address_line=address.address_line,
-            lat=address.lat,
-            lng=address.lng,
-            is_default=address.is_default,
-            created_at=address.created_at,
-            updated_at=address.updated_at,
-        )
-        for address in addresses
-    ]
+    try:
+        addresses = await service.list_addresses(current_user.user_id)
+        USER_ADDRESSES_REQUEST_TOTAL.labels(result="success").inc()
+        return [
+            _address_to_schema(address)
+            for address in addresses
+        ]
+    except Exception:
+        USER_ADDRESSES_REQUEST_TOTAL.labels(result="error").inc()
+        raise
+
+
+@router.post(
+    "/addresses",
+    response_model=UserAddressSchema,
+    status_code=status.HTTP_201_CREATED,
+    summary="新增地址",
+)
+async def create_address(
+    payload: UserAddressCreateSchema,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> UserAddressSchema:
+    address = await service.create_address(current_user.user_id, payload)
+    return _address_to_schema(address)
+
+
+@router.put(
+    "/addresses/{address_id}",
+    response_model=UserAddressSchema,
+    summary="更新地址",
+)
+async def update_address(
+    address_id: int,
+    payload: UserAddressUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> UserAddressSchema:
+    updated = await service.update_address(current_user.user_id, address_id, payload)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地址不存在")
+    return _address_to_schema(updated)
+
+
+@router.delete(
+    "/addresses/{address_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="删除地址",
+)
+async def delete_address(
+    address_id: int,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> Response:
+    deleted = await service.delete_address(current_user.user_id, address_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地址不存在")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
@@ -105,22 +166,69 @@ async def get_coupons(
     status: str | None = Query(default=None, regex="^(active|used|expired|void)$", description="筛选状态"),
 ) -> CouponsResponseSchema:
     """获取当前用户的优惠券列表"""
-    coupons, stats = await service.get_coupons(current_user.user_id, status_filter=status)
+    try:
+        coupons, stats = await service.get_coupons(current_user.user_id, status_filter=status)
+        USER_COUPONS_REQUEST_TOTAL.labels(result="success").inc()
 
-    return CouponsResponseSchema(
-        coupons=[
-            CouponSchema(
-                coupon_id=c.coupon_id,
-                user_id=c.user_id,
-                type=c.type,
-                status=c.status,
-                meta_json=c.meta_json,
-                issued_at=c.issued_at,
-                used_at=c.used_at,
-                used_in_order_id=c.used_in_order_id,
-                created_at=c.created_at,
-            )
-            for c in coupons
-        ],
-        stats=stats,
+        return CouponsResponseSchema(
+            coupons=[
+                CouponSchema(
+                    coupon_id=c.coupon_id,
+                    user_id=c.user_id,
+                    type=c.type,
+                    status=c.status,
+                    meta_json=c.meta_json,
+                    issued_at=c.issued_at,
+                    used_at=c.used_at,
+                    used_in_order_id=c.used_in_order_id,
+                    created_at=c.created_at,
+                )
+                for c in coupons
+            ],
+            stats=stats,
+        )
+    except Exception:
+        USER_COUPONS_REQUEST_TOTAL.labels(result="error").inc()
+        raise
+
+
+@router.get(
+    "/orders",
+    response_model=list[OrderResponseSchema],
+    summary="获取我的订单列表",
+)
+async def list_my_orders(
+    current_user: User = Depends(get_current_user),
+    order_service: OrderService = Depends(get_order_service),
+    limit: int = Query(default=20, ge=1, le=100, description="每页数量"),
+    offset: int = Query(default=0, ge=0, description="偏移量"),
+) -> list[OrderResponseSchema]:
+    orders = await order_service.list_orders(current_user, limit=limit, offset=offset)
+    return [OrderResponseSchema(**order) for order in orders]
+
+
+@router.get(
+    "/stamps",
+    response_model=StampStatusSchema,
+    summary="获取集点进度",
+)
+async def get_stamp_status(
+    current_user: User = Depends(get_current_user),
+    service: LoyaltyService = Depends(get_loyalty_service),
+) -> StampStatusSchema:
+    status_payload = await service.get_stamp_status(current_user.user_id)
+    return StampStatusSchema(**status_payload)
+
+
+def _address_to_schema(address) -> UserAddressSchema:
+    return UserAddressSchema(
+        address_id=address.address_id,
+        contact_name=address.contact_name,
+        phone=address.phone,
+        address_line=address.address_line,
+        lat=address.lat,
+        lng=address.lng,
+        is_default=address.is_default,
+        created_at=address.created_at,
+        updated_at=address.updated_at,
     )

@@ -2,19 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    CheckConstraint,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    func,
-    text,
-)
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,7 +12,7 @@ from app.db.base import BIGINT_PK, Base, CreatedAtMixin, TimestampMixin
 class Admin(Base, CreatedAtMixin):
     __tablename__ = "admins"
 
-    admin_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    admin_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     username: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -35,7 +23,7 @@ class Admin(Base, CreatedAtMixin):
 class User(Base, CreatedAtMixin):
     __tablename__ = "users"
 
-    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     open_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -52,7 +40,7 @@ class User(Base, CreatedAtMixin):
 class UserAddress(Base, TimestampMixin):
     __tablename__ = "user_addresses"
 
-    address_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    address_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,

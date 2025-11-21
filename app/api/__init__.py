@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     admin,
     advertisements,
+    config,
     guests,
     me,
     menu,
@@ -18,6 +19,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(system.router)
+api_router.include_router(config.router)
 api_router.include_router(admin.router)
 api_router.include_router(advertisements.router)
 api_router.include_router(users.router)
@@ -31,3 +33,4 @@ api_router.include_router(payments.legacy_router)
 api_router.include_router(want.router)
 api_router.include_router(ws.router)
 api_router.include_router(ops.router)
+api_router.include_router(config.admin_router)

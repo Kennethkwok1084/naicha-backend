@@ -22,3 +22,21 @@ class UserAddressSchema(BaseModel):
     is_default: bool
     created_at: datetime
     updated_at: datetime
+
+
+class UserAddressCreateSchema(BaseModel):
+    contact_name: str | None = None
+    phone: str | None = None
+    address_line: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    is_default: bool = False
+
+
+class UserAddressUpdateSchema(BaseModel):
+    contact_name: str | None = None
+    phone: str | None = None
+    address_line: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    is_default: bool | None = None

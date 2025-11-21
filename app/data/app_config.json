@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "ttl_seconds": 600,
+  "contact": {
+    "phone": "13800001234",
+    "business_hours": "09:00-21:00",
+    "wechat_qr": null
+  },
+  "legal": {
+    "privacy_url": "https://guajunyan.top/privacy.html",
+    "terms_url": "https://guajunyan.top/terms.html"
+  },
+  "ui": {
+    "eta_fallback_text": "前方排队制作中，预计等待时间请留意通知",
+    "order_confirm_tips": "请仔细核对订单信息后提交",
+    "pickup_guide": "请出示取餐码给店员"
+  },
+  "assets": {
+    "cdn_base_url": null
+  },
+  "features": {
+    "disable_delivery": false,
+    "disable_coupons": false,
+    "disable_stamps": false
+  }
+}

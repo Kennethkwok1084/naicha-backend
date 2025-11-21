@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     shop_profile_cache_url: str | None = Field(default=None, alias="SHOP_PROFILE_CACHE_URL")
     shop_profile_cache_key: str = Field(default="shop:profile", alias="SHOP_PROFILE_CACHE_KEY")
     shop_profile_file: str = Field(default="app/data/shop_profile.json", alias="SHOP_PROFILE_FILE")
+    public_config_file: str = Field(default="app/data/app_config.json", alias="PUBLIC_CONFIG_FILE")
+    public_config_cache_key: str = Field(
+        default="shop:public_config:v2", alias="PUBLIC_CONFIG_CACHE_KEY"
+    )
+    public_config_cache_ttl_seconds: int = Field(
+        default=300, alias="PUBLIC_CONFIG_CACHE_TTL_SECONDS"
+    )
 
     celery_broker_url: str = Field(default="redis://localhost:6379/0", alias="CELERY_BROKER_URL")
     celery_result_backend: str | None = Field(default=None, alias="CELERY_RESULT_BACKEND")

@@ -151,7 +151,10 @@ class LoyaltyService:
         stmt = (
             select(LoyaltyTransaction)
             .where(LoyaltyTransaction.user_id == user_id)
-            .order_by(LoyaltyTransaction.created_at.desc())
+            .order_by(
+                LoyaltyTransaction.created_at.desc(),
+                LoyaltyTransaction.id.desc(),
+            )
             .limit(limit)
             .offset(offset)
         )
@@ -191,6 +194,25 @@ class LoyaltyService:
         }
 
         return coupons, stats
+
+    async def get_stamp_status(self, user_id: int) -> dict[str, int]:
+        """集点进度（集10送1简化版）。"""
+        cycle = max(int(self.COUPON_THRESHOLD), 1)
+        completed = await self._session.scalar(
+            select(func.count())
+            .select_from(Order)
+            .where(
+                Order.user_id == user_id,
+                Order.status.in_(("paid", "in_production", "ready_for_pickup", "completed")),
+            )
+        )
+        completed = int(completed or 0)
+        return {
+            "total_completed_orders": completed,
+            "stamps_in_cycle": completed % cycle,
+            "rewards_available": completed // cycle,
+            "cycle_size": cycle,
+        }
 
     async def use_coupon(self, coupon_id: int, user_id: int, order_id: int) -> Coupon:
         """使用优惠券"""

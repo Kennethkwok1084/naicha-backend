@@ -8,12 +8,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.core.settings import get_settings
-from app.models.accounts import User
+from app.models.accounts import Coupon, User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import IdempotencyKey, Order
 from app.models.reservations import ReservationSlot
 from app.models.shop import ShopProfile
 from app.schemas import (
+    OrderAddressSchema,
+    OrderCalculateRequestSchema,
     OrderCreateRequestSchema,
     OrderItemCreateSchema,
     OrderPaymentJsapiRequestSchema,
@@ -515,3 +517,86 @@ async def test_cancel_stale_pending_orders_respects_cutoff(db_session) -> None:
     product = await db_session.get(Product, 1)
     assert product is not None
     assert product.stock_quantity == 50
+
+
+@pytest.mark.asyncio
+async def test_calculate_price_basic_breakdown(db_session) -> None:
+    await _seed_menu(db_session)
+    service = OrderService(db_session, get_settings())
+    payload = OrderCalculateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1])],
+        order_type="pickup",
+    )
+
+    result = await service.calculate_price_only(payload=payload, user=None)
+
+    assert result["subtotal"] == 26.0
+    assert result["final_amount"] == 26.0
+    assert len(result["breakdown"]) == 1
+    assert result["breakdown"][0]["unit_price"] == 13.0
+
+
+@pytest.mark.asyncio
+async def test_calculate_price_applies_coupon_discount(db_session) -> None:
+    await _seed_menu(db_session)
+    user = User(user_id=401, open_id="coupon-user")
+    coupon = Coupon(user_id=user.user_id, type="free_any_drink", status="active")
+    db_session.add_all([user, coupon])
+    await db_session.flush()
+
+    service = OrderService(db_session, get_settings())
+    payload = OrderCalculateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1])],
+        order_type="pickup",
+        coupon_id=coupon.coupon_id,
+    )
+
+    result = await service.calculate_price_only(payload=payload, user=user)
+
+    assert result["coupon_discount"] == 13.0
+    assert result["final_amount"] == 13.0
+    assert result["coupon_info"] is not None
+    assert result["coupon_info"]["is_applicable"] is True
+
+
+@pytest.mark.asyncio
+async def test_calculate_price_applies_points_cap(db_session) -> None:
+    await _seed_menu(db_session)
+    user = User(user_id=402, open_id="points-user", loyalty_points=800)
+    db_session.add(user)
+    await db_session.flush()
+
+    service = OrderService(db_session, get_settings())
+    payload = OrderCalculateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1])],
+        order_type="pickup",
+        points_use=600,
+    )
+
+    result = await service.calculate_price_only(payload=payload, user=user)
+
+    assert result["points_discount"] == 6.0
+    assert result["final_amount"] == 20.0
+    assert result["points_info"] is not None
+    assert result["points_info"]["used"] == 600
+
+
+@pytest.mark.asyncio
+async def test_calculate_price_delivery_fee(db_session) -> None:
+    await _seed_menu(db_session)
+    service = OrderService(db_session, get_settings())
+    payload = OrderCalculateRequestSchema(
+        items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        order_type="delivery",
+        address=OrderAddressSchema(
+            province="广东省",
+            city="深圳市",
+            district="南山区",
+            detail="科技园",
+        ),
+    )
+
+    result = await service.calculate_price_only(payload=payload, user=None)
+
+    assert result["delivery_fee"] == 6.0
+    assert result["final_amount"] == pytest.approx(19.0)

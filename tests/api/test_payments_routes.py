@@ -71,7 +71,7 @@ async def test_payment_notify_after_order_created_via_api(model_test_engine) -> 
                     "guest_session_id": guest_session_id,
                 },
             )
-            assert order_resp.status_code == 200
+            assert order_resp.status_code == 201
             order_payload = order_resp.json()
             order_number = order_payload["order_number"]
 

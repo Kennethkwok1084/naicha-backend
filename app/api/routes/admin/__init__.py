@@ -20,6 +20,7 @@ from app.metrics.admin_orders import (
     ADMIN_ORDER_CREATE_LATENCY_MS,
     ADMIN_ORDER_CREATED_TOTAL,
 )
+from app.metrics.auth import ADMIN_LOGIN_TOTAL
 from app.models.accounts import Admin
 from app.models.orders import AuditLog, Order, PrintJob
 from app.schemas import (
@@ -120,6 +121,7 @@ async def admin_login(
 ) -> TokenSchema:
     admin = await auth_service.authenticate_admin(payload.username, payload.password)
     if not admin:
+        ADMIN_LOGIN_TOTAL.labels(result="failure").inc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
@@ -127,6 +129,7 @@ async def admin_login(
         )
 
     token = auth_service.issue_access_token(subject=str(admin.admin_id), scope=TokenScope.ADMIN)
+    ADMIN_LOGIN_TOTAL.labels(result="success").inc()
     return TokenSchema(access_token=token)
 
 

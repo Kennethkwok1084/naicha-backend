@@ -32,32 +32,28 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
         extra = {key: value for key, value in detail.items() if key != "message"}
     else:
         message = str(detail)
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=_build_error_payload(message, exc.status_code, extra=extra),
-        headers=exc.headers,
-    )
+    content = _build_error_payload(message, exc.status_code, extra=extra)
+    content["detail"] = message
+    return JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers)
 
 
 async def validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=_build_error_payload(
-            "Request validation failed.",
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            extra={"details": exc.errors()},
-        ),
+    message = "Request validation failed."
+    content = _build_error_payload(
+        message,
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        extra={"details": exc.errors()},
     )
+    content["detail"] = message
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=content)
 
 
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
     structlog.get_logger("app").exception("Unhandled exception", error=str(exc))
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=_build_error_payload(
-            "Internal server error.", status.HTTP_500_INTERNAL_SERVER_ERROR
-        ),
-    )
+    message = "Internal server error."
+    content = _build_error_payload(message, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    content["detail"] = message
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=content)
 
 
 def init_exception_handlers(app: FastAPI) -> None:

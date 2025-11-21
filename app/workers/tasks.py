@@ -165,7 +165,9 @@ def run_print_job_recovery(limit: int = 50) -> None:
     lock_name = "celery:lock:print_job_recovery"
     should_run, lock, _ = _acquire_task_lock(lock_name, settings.print_recovery_interval_seconds)
     if not should_run:
-        logger.info("celery.task_skipped_due_to_lock", task="run_print_job_recovery")
+        logger.info(
+            "celery.task_skipped_due_to_lock", extra={"task": "run_print_job_recovery"}
+        )
         _observe_task_runtime("run_print_job_recovery", started_at)
         return
     try:
@@ -210,7 +212,10 @@ def reservation_send_reminders() -> None:
     lock_name = "celery:lock:reservation_send_reminders"
     should_run, lock, _ = _acquire_task_lock(lock_name, 60)
     if not should_run:
-        logger.info("celery.task_skipped_due_to_lock", task="reservation_send_reminders")
+        logger.info(
+            "celery.task_skipped_due_to_lock",
+            extra={"task": "reservation_send_reminders"},
+        )
         _observe_task_runtime("reservation_send_reminders", started_at)
         return
     try:
@@ -231,7 +236,10 @@ def reservation_activate_due_orders() -> None:
     lock_name = "celery:lock:reservation_activate_due_orders"
     should_run, lock, _ = _acquire_task_lock(lock_name, 60)
     if not should_run:
-        logger.info("celery.task_skipped_due_to_lock", task="reservation_activate_due_orders")
+        logger.info(
+            "celery.task_skipped_due_to_lock",
+            extra={"task": "reservation_activate_due_orders"},
+        )
         _observe_task_runtime("reservation_activate_due_orders", started_at)
         return
     try:
@@ -253,7 +261,10 @@ def cancel_stale_pending_orders(limit: int = 100) -> None:
     interval = max(settings.order_pending_cleanup_interval_seconds, 30)
     should_run, lock, degraded = _acquire_task_lock(lock_name, interval)
     if not should_run:
-        logger.info("celery.task_skipped_due_to_lock", task="cancel_stale_pending_orders")
+        logger.info(
+            "celery.task_skipped_due_to_lock",
+            extra={"task": "cancel_stale_pending_orders"},
+        )
         _observe_task_runtime("cancel_stale_pending_orders", started_at)
         return
     try:
@@ -293,7 +304,10 @@ def run_daily_reconciliation() -> None:
     lock_name = "celery:lock:run_daily_reconciliation"
     should_run, lock, _ = _acquire_task_lock(lock_name, 86400)
     if not should_run:
-        logger.info("celery.task_skipped_due_to_lock", task="run_daily_reconciliation")
+        logger.info(
+            "celery.task_skipped_due_to_lock",
+            extra={"task": "run_daily_reconciliation"},
+        )
         _observe_task_runtime("run_daily_reconciliation", started_at)
         return
     try:

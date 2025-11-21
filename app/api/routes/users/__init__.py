@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies.auth import get_auth_service
 from app.core.security import TokenScope
+from app.metrics.auth import USER_LOGIN_TOTAL
 from app.schemas import (
     UserLoginRequestSchema,
     UserLoginResponseSchema,
@@ -30,20 +31,25 @@ async def user_login(
     payload: UserLoginRequestSchema,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserLoginResponseSchema:
-    open_id = await _resolve_open_id(payload.code)
-    user = await auth_service.ensure_user(
-        open_id=open_id,
-        nickname=payload.nickname,
-        avatar_url=payload.avatar_url,
-    )
+    try:
+        open_id = await _resolve_open_id(payload.code)
+        user = await auth_service.ensure_user(
+            open_id=open_id,
+            nickname=payload.nickname,
+            avatar_url=payload.avatar_url,
+        )
 
-    token = auth_service.issue_access_token(subject=str(user.user_id), scope=TokenScope.USER)
-    return UserLoginResponseSchema(
-        access_token=token,
-        user=UserSummarySchema(
-            user_id=user.user_id,
-            nickname=user.nickname,
-            avatar_url=user.avatar_url,
-            loyalty_points=user.loyalty_points,
-        ),
-    )
+        token = auth_service.issue_access_token(subject=str(user.user_id), scope=TokenScope.USER)
+        USER_LOGIN_TOTAL.labels(result="success").inc()
+        return UserLoginResponseSchema(
+            access_token=token,
+            user=UserSummarySchema(
+                user_id=user.user_id,
+                nickname=user.nickname,
+                avatar_url=user.avatar_url,
+                loyalty_points=user.loyalty_points,
+            ),
+        )
+    except HTTPException:
+        USER_LOGIN_TOTAL.labels(result="failure").inc()
+        raise

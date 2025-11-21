@@ -36,6 +36,8 @@ _MENU_PAYLOAD_KEY = "menu:payload"
 _menu_version_lock = Lock()
 _MENU_VERSION_CLIENTS: WeakKeyDictionary[Any, Redis] = WeakKeyDictionary()
 _menu_version_disabled = False
+_REDIS_CONNECT_TIMEOUT = 0.5
+_REDIS_OP_TIMEOUT = 1.0
 
 
 def _disable_menu_version_tracking() -> None:
@@ -62,7 +64,13 @@ def _get_version_client(settings: Settings) -> Redis | None:
         if client is not None:
             return client
         try:
-            client = from_url(settings.celery_broker_url, decode_responses=True)
+            client = from_url(
+                settings.celery_broker_url,
+                decode_responses=True,
+                socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
+                socket_timeout=_REDIS_OP_TIMEOUT,
+                retry_on_timeout=False,
+            )
         except Exception as exc:  # pragma: no cover - 初始化失败仅记录
             logger.warning("menu.cache.version_client_init_failed", error=str(exc))
             _disable_menu_version_tracking()

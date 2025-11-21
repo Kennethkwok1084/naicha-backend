@@ -1,27 +1,16 @@
 from __future__ import annotations
 
-from sqlalchemy import (
-    BigInteger,
-    CheckConstraint,
-    ForeignKey,
-    Index,
-    Integer,
-    Numeric,
-    String,
-    Text,
-    UniqueConstraint,
-    event,
-)
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.orm.attributes import NO_VALUE
 
-from app.db.base import Base, CreatedAtMixin, TimestampMixin
+from app.db.base import Base, CreatedAtMixin, TimestampMixin, BIGINT_PK
 
 
 class Category(Base, CreatedAtMixin):
     __tablename__ = "categories"
 
-    category_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    category_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     sort_order: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
 
@@ -29,7 +18,7 @@ class Category(Base, CreatedAtMixin):
 class Product(Base, TimestampMixin):
     __tablename__ = "products"
 
-    product_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    product_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.category_id", ondelete="SET NULL"),
         nullable=True,
@@ -82,7 +71,7 @@ class ProductCategory(Base):
 class SpecGroup(Base, CreatedAtMixin):
     __tablename__ = "spec_groups"
 
-    group_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    group_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     sort_order: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
 
@@ -90,7 +79,7 @@ class SpecGroup(Base, CreatedAtMixin):
 class SpecOption(Base, CreatedAtMixin):
     __tablename__ = "spec_options"
 
-    option_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    option_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     group_id: Mapped[int] = mapped_column(
         ForeignKey("spec_groups.group_id", ondelete="CASCADE"),
         nullable=False,
@@ -116,7 +105,7 @@ class SpecOption(Base, CreatedAtMixin):
 class ProductSpecMapping(Base):
     __tablename__ = "product_spec_mappings"
 
-    mapping_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    mapping_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
     product_id: Mapped[int] = mapped_column(
         ForeignKey("products.product_id", ondelete="CASCADE"),
         nullable=False,

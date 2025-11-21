@@ -51,6 +51,7 @@ class Order(Base, TimestampMixin):
     reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    pickup_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     reservation_slot_id: Mapped[int | None] = mapped_column(
         ForeignKey("reservation_slots.slot_id", ondelete="SET NULL"),
         nullable=True,

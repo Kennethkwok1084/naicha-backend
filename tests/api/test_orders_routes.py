@@ -77,11 +77,14 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                 },
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             payload = response.json()
             assert payload["order_type"] == "pickup"
             assert payload["total_price"] == 17.0
             assert payload["items"][0]["product_id"] == 101
+            assert payload["pickup_code"]
+            assert payload["eta_minutes"] >= 1
+            assert payload["eta_text"]
 
             order_id = payload["order_id"]
 
@@ -116,8 +119,28 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                     "notes": "无糖",
                 },
             )
-            assert second.status_code == 200
+            assert second.status_code == 201
             assert second.json()["order_id"] == order_id
+
+            detail = await client.get(
+                f"/api/v1/orders/{order_id}", headers={"Authorization": f"Bearer {token}"}
+            )
+            assert detail.status_code == 200
+            assert detail.json()["order_id"] == order_id
+
+            preview_resp = await client.post(
+                "/api/v1/orders/preview",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "items": [
+                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                    ],
+                    "order_type": "pickup",
+                    "notes": "无糖",
+                },
+            )
+            assert preview_resp.status_code == 200
+            assert preview_resp.json()["eta_minutes"] >= 1
     finally:
         app.dependency_overrides.pop(get_async_session, None)
 
@@ -200,7 +223,7 @@ async def test_create_order_api_idempotency_under_concurrency(model_test_engine)
         if hasattr(transport, "close"):
             transport.close()
 
-    assert all(response.status_code == 200 for response in responses)
+    assert all(response.status_code == 201 for response in responses)
     payloads = [resp.json() for resp in responses]
     order_ids = {payload["order_id"] for payload in payloads}
     assert len(order_ids) == 10
@@ -240,7 +263,7 @@ async def test_create_order_api_requires_guest_session(db_session) -> None:
                     "guest_session_id": "gs-test",
                 },
             )
-            assert with_session.status_code == 200
+            assert with_session.status_code == 201
             data = with_session.json()
             assert data["items"][0]["product_id"] == 101
     finally:
@@ -288,7 +311,7 @@ async def test_create_order_api_reservation_success(db_session) -> None:
                 },
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         payload = response.json()
         assert payload["is_scheduled"] is True
         assert payload["scheduled_at"].endswith("Z") or payload["scheduled_at"].endswith("+00:00")

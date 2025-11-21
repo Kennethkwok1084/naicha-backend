@@ -20,6 +20,23 @@ class OrderDeliveryAddressSchema(BaseModel):
     lng: float | None = Field(default=None, ge=-180, le=180)
 
 
+class OrderAddressSchema(BaseModel):
+    province: str
+    city: str
+    district: str
+    detail: str
+
+
+class OrderCalculateRequestSchema(BaseModel):
+    """价格试算请求"""
+
+    items: list[OrderItemCreateSchema] = Field(..., min_length=1, max_length=30)
+    coupon_id: int | None = None
+    points_use: int = Field(default=0, ge=0)
+    order_type: Literal["pickup", "delivery", "dine_in"] = "pickup"
+    address: OrderAddressSchema | None = None
+
+
 class OrderCreateRequestSchema(BaseModel):
     items: list[OrderItemCreateSchema] = Field(..., min_length=1, max_length=30)
     order_type: str = Field(..., pattern="^(pickup|delivery)$")
@@ -56,6 +73,53 @@ class OrderItemSchema(BaseModel):
     selected_specs: list[dict[str, Any]]
 
 
+class PriceBreakdownItemSchema(BaseModel):
+    """单品价格明细"""
+
+    product_id: int
+    product_name: str
+    quantity: int
+    base_price: float
+    specs: list[dict[str, Any]]
+    unit_price: float
+    subtotal: float
+
+
+class CouponApplicabilitySchema(BaseModel):
+    """优惠券使用信息"""
+
+    coupon_id: int
+    type: str
+    discount_amount: float
+    min_order_amount: float | None = None
+    is_applicable: bool
+    reason: str = ""
+
+
+class PointsInfoSchema(BaseModel):
+    """积分抵扣信息"""
+
+    available: int
+    used: int
+    discount: float
+    exchange_rate: int = 100
+
+
+class OrderCalculateResponseSchema(BaseModel):
+    """价格试算响应"""
+
+    subtotal: float
+    coupon_discount: float = 0.0
+    points_discount: float = 0.0
+    delivery_fee: float = 0.0
+    final_amount: float
+    breakdown: list[PriceBreakdownItemSchema] = Field(default_factory=list)
+    coupon_info: CouponApplicabilitySchema | None = None
+    points_info: PointsInfoSchema | None = None
+    eta_minutes: int | None = Field(default=None, description="预计等待/送达分钟数")
+    eta_text: str | None = Field(default=None, description="预计时间文案")
+
+
 class OrderResponseSchema(BaseModel):
     order_id: int
     order_number: str
@@ -66,6 +130,9 @@ class OrderResponseSchema(BaseModel):
     is_scheduled: bool
     scheduled_at: datetime | None
     reminder_sent_at: datetime | None
+    eta_minutes: int | None = Field(default=None, description="预计等待/送达分钟数")
+    eta_text: str | None = Field(default=None, description="预计时间文案")
+    pickup_code: str | None = Field(default=None, description="取餐码")
     items: list[OrderItemSchema]
 
 

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import get_current_user_optional
+from app.api.dependencies.auth import get_current_user, get_current_user_optional
 from app.core.rate_limiter import limiter
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.schemas import (
+    OrderCalculateRequestSchema,
+    OrderCalculateResponseSchema,
     OrderCreateRequestSchema,
     OrderPaymentInitiateResponseSchema,
     OrderPaymentJsapiRequestSchema,
@@ -33,7 +35,67 @@ async def get_order_service(
     return OrderService(session, get_settings())
 
 
-@router.post("", response_model=OrderResponseSchema, summary="创建订单")
+async def _calculate_price_core(
+    request: Request,
+    service: OrderService,
+    current_user,
+) -> OrderCalculateResponseSchema:
+    try:
+        raw_body = await request.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body.",
+        ) from exc
+
+    try:
+        payload = OrderCalculateRequestSchema.model_validate(raw_body)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+    try:
+        result = await service.calculate_price_only(payload=payload, user=current_user)
+    except OrderValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return OrderCalculateResponseSchema(**result)
+
+
+@router.post(
+    "/calculate-price",
+    response_model=OrderCalculateResponseSchema,
+    summary="订单价格试算",
+)
+@limiter.limit("60/minute")
+async def calculate_price(
+    request: Request,
+    response: Response,
+    service: OrderService = Depends(get_order_service),
+    current_user=Depends(get_current_user_optional),
+) -> OrderCalculateResponseSchema:
+    return await _calculate_price_core(request, service, current_user)
+
+
+@router.post(
+    "/preview",
+    response_model=OrderCalculateResponseSchema,
+    summary="订单价格预览",
+)
+@limiter.limit("60/minute")
+async def preview_price(
+    request: Request,
+    response: Response,
+    service: OrderService = Depends(get_order_service),
+    current_user=Depends(get_current_user_optional),
+) -> OrderCalculateResponseSchema:
+    return await _calculate_price_core(request, service, current_user)
+
+
+@router.post(
+    "",
+    response_model=OrderResponseSchema,
+    summary="创建订单",
+    status_code=status.HTTP_201_CREATED,
+)
 # @limiter.limit("3000/minute")  # 临时禁用限流
 async def create_order(
     request: Request,
@@ -66,6 +128,32 @@ async def create_order(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except OrderConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    response.status_code = status.HTTP_201_CREATED
+    return OrderResponseSchema(**result)
+
+
+@router.get(
+    "/{order_id}",
+    response_model=OrderResponseSchema,
+    summary="获取订单详情",
+)
+async def get_order_detail(
+    order_id: int,
+    guest_session_id: str | None = Query(default=None, max_length=80),
+    service: OrderService = Depends(get_order_service),
+    current_user=Depends(get_current_user_optional),
+) -> OrderResponseSchema:
+    try:
+        result = await service.get_order_detail(
+            order_id,
+            current_user,
+            guest_session_id=guest_session_id,
+        )
+    except OrderNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except OrderOwnershipError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     return OrderResponseSchema(**result)
 

@@ -5,6 +5,16 @@ from .auth import (
     UserLoginResponseSchema,
     UserSummarySchema,
 )
+from .config import (
+    FeatureToggleRequestSchema,
+    FeatureToggleResponseSchema,
+    PublicAssetsSchema,
+    PublicConfigSchema,
+    PublicContactSchema,
+    PublicFeaturesSchema,
+    PublicLegalSchema,
+    PublicUiSchema,
+)
 from .dashboard import (
     DashboardPaymentChannelSchema,
     DashboardResponseSchema,
@@ -24,6 +34,7 @@ from .loyalty import (
     CouponStatsSchema,
     LoyaltyTransactionSchema,
     LoyaltyTransactionsResponseSchema,
+    StampStatusSchema,
 )
 from .menu import (
     MenuCategorySchema,
@@ -35,8 +46,12 @@ from .menu import (
 from .order import (
     AdminOrderCreateRequestSchema,
     AdminOrderResponseSchema,
+    CouponApplicabilitySchema,
     OpsAutoCancelRequestSchema,
     OpsAutoCancelResponseSchema,
+    OrderAddressSchema,
+    OrderCalculateRequestSchema,
+    OrderCalculateResponseSchema,
     OrderCreateRequestSchema,
     OrderDeliveryAddressSchema,
     OrderItemCreateSchema,
@@ -45,6 +60,8 @@ from .order import (
     OrderPaymentJsapiRequestSchema,
     OrderPaymentNativeRequestSchema,
     OrderResponseSchema,
+    PointsInfoSchema,
+    PriceBreakdownItemSchema,
 )
 from .payment import (
     AdminPaymentMatchCandidateSchema,
@@ -61,7 +78,12 @@ from .shop import (
     ShopProfileSchema,
     ShopStatusSchema,
 )
-from .user import UserAddressSchema, UserProfileSchema
+from .user import (
+    UserAddressCreateSchema,
+    UserAddressSchema,
+    UserAddressUpdateSchema,
+    UserProfileSchema,
+)
 from .want import (
     WantDailyPointSchema,
     WantRecordResponseSchema,
@@ -93,7 +115,10 @@ __all__ = [
     "CouponSchema",
     "CouponStatsSchema",
     "CouponsResponseSchema",
+    "CouponApplicabilitySchema",
     "CreativeJumpSchema",
+    "FeatureToggleRequestSchema",
+    "FeatureToggleResponseSchema",
     "DashboardPaymentChannelSchema",
     "DashboardResponseSchema",
     "DashboardSummarySchema",
@@ -116,6 +141,9 @@ __all__ = [
     "MenuSpecOptionSchema",
     "OpsAutoCancelRequestSchema",
     "OpsAutoCancelResponseSchema",
+    "OrderAddressSchema",
+    "OrderCalculateRequestSchema",
+    "OrderCalculateResponseSchema",
     "OrderCreateRequestSchema",
     "OrderDeliveryAddressSchema",
     "OrderItemCreateSchema",
@@ -124,13 +152,23 @@ __all__ = [
     "OrderPaymentJsapiRequestSchema",
     "OrderPaymentNativeRequestSchema",
     "OrderResponseSchema",
+    "PointsInfoSchema",
+    "PriceBreakdownItemSchema",
     "PaymentNotifyResponseSchema",
+    "PublicAssetsSchema",
+    "PublicConfigSchema",
+    "PublicContactSchema",
+    "PublicFeaturesSchema",
+    "PublicLegalSchema",
+    "PublicUiSchema",
     "ShopFeaturesSchema",
     "ShopLocationSchema",
     "ShopProfileSchema",
     "ShopStatusSchema",
     "TokenSchema",
+    "UserAddressCreateSchema",
     "UserAddressSchema",
+    "UserAddressUpdateSchema",
     "UserLoginRequestSchema",
     "UserLoginResponseSchema",
     "UserProfileSchema",
