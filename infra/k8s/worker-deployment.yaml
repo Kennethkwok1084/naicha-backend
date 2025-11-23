@@ -25,6 +25,8 @@ spec:
             - -A
             - app.workers.celery_app:celery_app
             - worker
+            - -Q
+            - analytics,default,print_jobs
             - --loglevel=info
           envFrom:
             - secretRef:
@@ -36,6 +38,8 @@ spec:
               value: default
             - name: PRINT_JOB_QUEUE_NAME
               value: print_jobs
+            - name: ANALYTICS_QUEUE_NAME
+              value: analytics
             - name: PRINTER_TIMEOUT_SECONDS
               value: "5"
             - name: MENU_CACHE_TTL_SECONDS

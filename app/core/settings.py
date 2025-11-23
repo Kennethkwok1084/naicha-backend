@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     celery_result_backend: str | None = Field(default=None, alias="CELERY_RESULT_BACKEND")
     celery_default_queue: str = Field(default="default", alias="CELERY_DEFAULT_QUEUE")
     print_job_queue_name: str = Field(default="print_jobs", alias="PRINT_JOB_QUEUE_NAME")
+    analytics_queue_name: str = Field(default="analytics", alias="ANALYTICS_QUEUE_NAME")
     printer_webhook_url: str | None = Field(default=None, alias="PRINTER_WEBHOOK_URL")
     printer_webhook_token: str | None = Field(default=None, alias="PRINTER_WEBHOOK_TOKEN")
     printer_timeout_seconds: int = Field(default=5, alias="PRINTER_TIMEOUT_SECONDS")

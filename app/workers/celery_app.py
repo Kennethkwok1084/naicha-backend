@@ -17,7 +17,7 @@ celery_app.conf.update(
     task_routes={
         "app.workers.tasks.process_print_job": {"queue": settings.print_job_queue_name},
         "app.workers.tasks.run_print_job_recovery": {"queue": settings.print_job_queue_name},
-        "app.workers.tasks.batch_ingest_analytics_events": {"queue": "analytics"},
+        "app.workers.tasks.batch_ingest_analytics_events": {"queue": settings.analytics_queue_name},
     },
     task_serializer="json",
     result_serializer="json",

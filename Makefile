@@ -28,7 +28,7 @@ dev:
 	$(UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000
 
 worker:
-	celery -A app.workers.celery_app:celery_app worker --loglevel=info
+	celery -A app.workers.celery_app:celery_app worker -Q analytics,default,print_jobs --loglevel=info
 
 migrate:
 	alembic revision --autogenerate -m "describe changes"
