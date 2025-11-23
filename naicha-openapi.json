@@ -979,6 +979,66 @@
         }
       }
     },
+    "/api/v1/analytics/events": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "批量上报用户行为埋点",
+        "description": "批量上报用户行为埋点事件,用于分析用户行为、页面访问、业务转化漏斗等。\n    \n    **限制**:\n    - 单次最多10条事件\n    - 每条事件 payload 不超过 8KB\n    - 匿名用户必须提供 X-Session-Id 请求头\n    - 限流: 100次/分钟/IP\n    \n    **幂等性**:\n    基于 event.id (UUID) 主键去重,重复事件会被自动忽略\n    \n    **异步处理**:\n    事件会立即加入Celery队列,由Worker异步批量入库,API立即返回204",
+        "operationId": "batch_report_events_api_v1_analytics_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/analytics/health": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "埋点系统健康检查",
+        "description": "检查Celery队列积压情况,超过10000条事件告警",
+        "operationId": "analytics_health_api_v1_analytics_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/login": {
       "post": {
         "tags": [
@@ -1115,6 +1175,145 @@
             "HTTPBearer": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "新增地址",
+        "operationId": "create_address_api_v1_me_addresses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserAddressCreateSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAddressSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/addresses/{address_id}": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "更新地址",
+        "operationId": "update_address_api_v1_me_addresses__address_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "address_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Address Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserAddressUpdateSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAddressSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "删除地址",
+        "operationId": "delete_address_api_v1_me_addresses__address_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "address_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Address Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/me/loyalty/transactions": {
@@ -1239,6 +1438,101 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/me/orders": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "获取我的订单列表",
+        "operationId": "list_my_orders_api_v1_me_orders_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页数量",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "每页数量"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "偏移量",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "偏移量"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderResponseSchema"
+                  },
+                  "title": "Response List My Orders Api V1 Me Orders Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/stamps": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "获取集点进度",
+        "operationId": "get_stamp_status_api_v1_me_stamps_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StampStatusSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/menu": {
@@ -1371,6 +1665,32 @@
         ]
       }
     },
+    "/api/v1/orders/preview": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "订单价格预览",
+        "operationId": "preview_price_api_v1_orders_preview_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderCalculateResponseSchema"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/orders": {
       "post": {
         "tags": [
@@ -1395,6 +1715,70 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/orders/{order_id}": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "获取订单详情",
+        "operationId": "get_order_detail_api_v1_orders__order_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "guest_session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guest Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/orders/{order_id}/pay/jsapi": {
@@ -2102,6 +2486,99 @@
         ],
         "title": "AdminPaymentMatchResponseSchema"
       },
+      "AnalyticsEventSchema": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid4",
+            "title": "Id",
+            "description": "事件唯一标识(UUID v4)",
+            "examples": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "event",
+              "page",
+              "user"
+            ],
+            "title": "Type",
+            "description": "事件类型: event(操作)/page(页面)/user(用户属性)"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name",
+            "description": "事件名称",
+            "examples": [
+              "add_to_cart",
+              "page_view",
+              "pay_success"
+            ]
+          },
+          "timestamp": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Timestamp",
+            "description": "Unix毫秒时间戳",
+            "examples": [
+              1700000000000
+            ]
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload",
+            "description": "自定义事件属性(最多30个字段,总大小≤8KB,嵌套≤4层)",
+            "examples": [
+              {
+                "price": 15.0,
+                "productId": 123,
+                "quantity": 2
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "timestamp"
+        ],
+        "title": "AnalyticsEventSchema",
+        "description": "单个埋点事件Schema"
+      },
+      "BatchEventsRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsEventSchema"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Events",
+            "description": "事件列表(单次最多10条)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "BatchEventsRequest",
+        "description": "批量上报埋点事件请求"
+      },
       "CouponApplicabilitySchema": {
         "properties": {
           "coupon_id": {
@@ -2749,7 +3226,7 @@
         "title": "LoyaltyTransactionsResponseSchema",
         "description": "积分明细列表响应"
       },
-      "MenuCategorySchema-Input": {
+      "MenuCategorySchema": {
         "properties": {
           "category_id": {
             "type": "integer",
@@ -2765,7 +3242,7 @@
           },
           "products": {
             "items": {
-              "$ref": "#/components/schemas/MenuProductSchema-Input"
+              "$ref": "#/components/schemas/MenuProductSchema"
             },
             "type": "array",
             "title": "Products"
@@ -2780,103 +3257,7 @@
         ],
         "title": "MenuCategorySchema"
       },
-      "MenuCategorySchema-Output": {
-        "properties": {
-          "category_id": {
-            "type": "integer",
-            "title": "Category Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "sort_order": {
-            "type": "integer",
-            "title": "Sort Order"
-          },
-          "products": {
-            "items": {
-              "$ref": "#/components/schemas/MenuProductSchema-Output"
-            },
-            "type": "array",
-            "title": "Products"
-          }
-        },
-        "type": "object",
-        "required": [
-          "category_id",
-          "name",
-          "sort_order",
-          "products"
-        ],
-        "title": "MenuCategorySchema"
-      },
-      "MenuProductSchema-Input": {
-        "properties": {
-          "product_id": {
-            "type": "integer",
-            "title": "Product Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "image_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Url"
-          },
-          "base_price": {
-            "type": "number",
-            "title": "Base Price"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "inventory_status": {
-            "type": "string",
-            "title": "Inventory Status"
-          },
-          "spec_groups": {
-            "items": {
-              "$ref": "#/components/schemas/MenuSpecGroupSchema"
-            },
-            "type": "array",
-            "title": "Spec Groups"
-          }
-        },
-        "type": "object",
-        "required": [
-          "product_id",
-          "name",
-          "description",
-          "image_url",
-          "base_price",
-          "status",
-          "inventory_status",
-          "spec_groups"
-        ],
-        "title": "MenuProductSchema"
-      },
-      "MenuProductSchema-Output": {
+      "MenuProductSchema": {
         "properties": {
           "product_id": {
             "type": "integer",
@@ -2945,14 +3326,14 @@
         "properties": {
           "categories": {
             "items": {
-              "$ref": "#/components/schemas/MenuCategorySchema-Output"
+              "$ref": "#/components/schemas/MenuCategorySchema"
             },
             "type": "array",
             "title": "Categories"
           },
           "uncategorized_products": {
             "items": {
-              "$ref": "#/components/schemas/MenuProductSchema-Output"
+              "$ref": "#/components/schemas/MenuProductSchema"
             },
             "type": "array",
             "title": "Uncategorized Products"
@@ -3159,6 +3540,30 @@
                 "type": "null"
               }
             ]
+          },
+          "eta_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Minutes",
+            "description": "预计等待/送达分钟数"
+          },
+          "eta_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Text",
+            "description": "预计时间文案"
           }
         },
         "type": "object",
@@ -3296,6 +3701,42 @@
               }
             ],
             "title": "Reminder Sent At"
+          },
+          "eta_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Minutes",
+            "description": "预计等待/送达分钟数"
+          },
+          "eta_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Text",
+            "description": "预计时间文案"
+          },
+          "pickup_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pickup Code",
+            "description": "取餐码"
           },
           "items": {
             "items": {
@@ -3814,6 +4255,35 @@
         ],
         "title": "ShopStatusSchema"
       },
+      "StampStatusSchema": {
+        "properties": {
+          "total_completed_orders": {
+            "type": "integer",
+            "title": "Total Completed Orders"
+          },
+          "stamps_in_cycle": {
+            "type": "integer",
+            "title": "Stamps In Cycle"
+          },
+          "rewards_available": {
+            "type": "integer",
+            "title": "Rewards Available"
+          },
+          "cycle_size": {
+            "type": "integer",
+            "title": "Cycle Size",
+            "default": 10
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_completed_orders",
+          "stamps_in_cycle",
+          "rewards_available"
+        ],
+        "title": "StampStatusSchema",
+        "description": "集点状态"
+      },
       "TokenSchema": {
         "properties": {
           "access_token": {
@@ -3831,6 +4301,72 @@
           "access_token"
         ],
         "title": "TokenSchema"
+      },
+      "UserAddressCreateSchema": {
+        "properties": {
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "address_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "UserAddressCreateSchema"
       },
       "UserAddressSchema": {
         "properties": {
@@ -3921,6 +4457,78 @@
           "updated_at"
         ],
         "title": "UserAddressSchema"
+      },
+      "UserAddressUpdateSchema": {
+        "properties": {
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "address_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          }
+        },
+        "type": "object",
+        "title": "UserAddressUpdateSchema"
       },
       "UserLoginRequestSchema": {
         "properties": {

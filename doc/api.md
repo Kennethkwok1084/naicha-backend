@@ -2,6 +2,117 @@
 
 创建或修改任何 API 时，请复制下列模板并更新对应字段。每个接口一次变更占用一个条目，按时间倒序追加到文档中。
 
+---
+
+## 最新变更
+
+### 批量上报用户行为埋点
+- **状态**：新增 （日期：2025-11-23）
+- **路径/方法**：`POST /api/v1/analytics/events`
+- **权限**：公开（可选JWT认证，匿名用户需X-Session-Id）
+- **幂等要求**：是（基于 `events[].id` UUID主键去重）
+- **限流**：100 req/min/IP（应用内 SlowAPI）
+- **请求头**：
+  - `X-Session-Id`: 会话标识（**匿名用户必填**）
+  - `Authorization`: Bearer token（可选）
+- **请求体**：
+```json
+{
+  "events": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "event",
+      "name": "add_to_cart",
+      "timestamp": 1700000000000,
+      "payload": {
+        "productId": 123,
+        "productName": "珍珠奶茶",
+        "quantity": 2,
+        "price": 15.0
+      }
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "type": "page",
+      "name": "page_view",
+      "timestamp": 1700000001000,
+      "payload": {
+        "path": "/pages/menu/index",
+        "referrer": "/pages/index/index",
+        "duration": 3500
+      }
+    }
+  ]
+}
+```
+- **字段说明**：
+  - `events[]`: 事件数组，**单次最多10条**
+  - `id`: UUID v4 唯一标识（前端生成）
+  - `type`: 事件类型 - `event`(操作) / `page`(页面) / `user`(用户属性)
+  - `name`: 事件名称（字母、数字、下划线、连字符组合，1-50字符）
+  - `timestamp`: Unix毫秒时间戳
+  - `payload`: 自定义事件属性（可选）
+    - 最多30个字段
+    - 总大小≤8KB（序列化后）
+    - 嵌套深度≤4层
+- **响应体**：`204 No Content`（空响应体）
+- **错误码**：
+  - 400 Bad Request - 匿名用户缺少 X-Session-Id
+  - 400 Bad Request - events 数组为空或超过10条
+  - 413 Payload Too Large - 请求体超过32KB
+  - 422 Unprocessable Entity - 事件格式校验失败
+    - payload 字段数量超过30个
+    - payload 总大小超过8KB
+    - payload 嵌套层级超过4层
+    - 事件名格式非法
+    - 批次内存在重复的事件ID
+  - 429 Too Many Requests - 超过限流阈值（100次/分钟）
+- **副作用**：
+  1. 事件整批投递到 Celery 队列（`analytics` 队列）
+  2. Worker 异步批量插入数据库（5秒内，`ON CONFLICT DO NOTHING`）
+  3. Prometheus 指标上报：
+     - `analytics_events_received_total{event_type}`: API接收事件数
+     - `analytics_events_inserted_total{event_type}`: 成功入库事件数
+     - `analytics_events_duplicates_total`: 重复事件数
+- **审计记录**：否（不写入 `audit_logs`，仅存储至 `analytics_events` 表）
+- **数据存储**：
+  - 表名：`analytics_events`
+  - 主键：`event_id UUID` 实现幂等去重
+  - 索引：按 `user_id + event_timestamp`, `event_name + event_timestamp`, `session_id + event_timestamp` 优化查询
+- **观测指标**：
+  - `analytics_events_received_total{event_type}` - API接收事件总数（按类型）
+  - `analytics_events_inserted_total{event_type}` - 成功入库事件数（按类型）
+  - `analytics_events_duplicates_total` - 重复事件数（主键冲突）
+  - `analytics_events_failed_total` - 入库失败次数（重试耗尽）
+  - `analytics_batch_insert_duration_seconds` - 批量插入耗时（秒）
+  - `analytics_batch_size` - 每批次插入的事件数量
+- **测试清单**：
+  - [x] 正常流（已登录用户上报）
+  - [x] 正常流（匿名用户携带X-Session-Id上报）
+  - [x] 参数校验（payload过大、嵌套过深、字段数超限）
+  - [x] 参数校验（匿名用户缺少X-Session-Id）
+  - [x] 幂等性（重复UUID被自动忽略）
+  - [ ] 限流测试（100次/分钟）
+  - [ ] 并发测试（多进程同时上报）
+  - [ ] 性能测试（API响应≤20ms，入库延迟≤5秒）
+- **前端触发时机**：
+  - 每隔15秒自动批量上报
+  - 累积10条事件时立即上报
+  - 页面关闭前上报剩余事件（`beforeunload`）
+- **数据可靠性保证**：
+  - Celery `task_acks_late=True`: 任务执行完才确认，失败自动重新投递
+  - Celery `task_reject_on_worker_lost=True`: Worker异常退出时拒绝任务（重新入队）
+  - Celery 自动重试: 最多3次，每次间隔10秒
+  - Redis Broker `visibility_timeout=3600`: 1小时可见性超时（避免长事务重复投递）
+  - PostgreSQL 主键约束: 最终幂等保证
+- **部署要求**：
+  - API服务: 可多进程/多副本运行
+  - Celery Worker: 独立 `analytics` 队列，建议2-4个worker
+    - 启动命令: `celery -A app.workers.celery_app worker -Q analytics,default -l info --concurrency=4`
+  - Redis Broker: 确保持久化已开启（AOF或RDB）
+- **变更历史**：
+  - 2025-11-23：首次发布，支持批量埋点上报
+
 ```markdown
 ### [API 名称]
 - **状态**：新增 | 修改 | 弃用 | 删除  （日期：YYYY-MM-DD）

@@ -1,5 +1,6 @@
 from app.models.accounts import Admin, Coupon, LoyaltyTransaction, User, UserAddress
 from app.models.advertisement import AdCreative, AdPlacement, AdSlot
+from app.models.analytics import AnalyticsEvent
 from app.models.catalog import (
     Category,
     Product,
@@ -26,6 +27,7 @@ __all__ = [
     "AdPlacement",
     "AdSlot",
     "Admin",
+    "AnalyticsEvent",
     "AuditLog",
     "Category",
     "Coupon",
