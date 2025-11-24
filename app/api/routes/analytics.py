@@ -6,6 +6,7 @@ from starlette.responses import JSONResponse
 
 from app.api.dependencies.auth import get_current_user_optional
 from app.core.rate_limiter import limiter
+from app.core.settings import get_settings
 from app.metrics.analytics import ANALYTICS_EVENTS_RECEIVED_TOTAL
 from app.models.accounts import User
 from app.schemas.analytics import BatchEventsRequest
@@ -82,9 +83,10 @@ async def batch_report_events(
         )
 
     # 4. 异步投递到Celery队列(不等待执行结果)
+    settings = get_settings()
     batch_ingest_analytics_events.apply_async(
         kwargs={"events_data": events_data},
-        queue="analytics",  # 独立队列,避免影响核心业务
+        queue=settings.analytics_queue_name,  # 使用配置的队列名
         priority=1,  # 低优先级
         expires=300,  # 5分钟过期,避免积压过期数据
     )
@@ -133,8 +135,8 @@ async def analytics_health():
         if "redis" in settings.celery_broker_url.lower():
             try:
                 redis_client = redis.from_url(settings.celery_broker_url, decode_responses=False)
-                # Celery在Redis中的队列键格式: celery (默认队列) 或 analytics
-                queue_size = redis_client.llen("analytics") or 0
+                # Celery在Redis中的队列键格式: celery (默认队列) 或配置的队列名
+                queue_size = redis_client.llen(settings.analytics_queue_name) or 0
                 redis_client.close()
             except Exception as redis_exc:
                 logger.warning("analytics.redis_check_failed", error=str(redis_exc))
