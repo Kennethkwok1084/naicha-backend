@@ -89,8 +89,10 @@ async def test_reservation_slot_concurrent_capacity(model_test_engine) -> None:
                             spec_option_ids=[7101],
                         )
                     ],
+                    shop_id=1,
                     order_type="pickup",
                     scheduled_at=scheduled_local,
+                    user_phone="13800000000",
                 )
                 try:
                     return await service.create_order(

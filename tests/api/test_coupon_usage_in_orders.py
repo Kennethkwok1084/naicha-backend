@@ -57,7 +57,9 @@ async def test_create_order_with_valid_coupon(
 ):
     """测试使用有效优惠券创建订单"""
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "notes": "使用优惠券",
         "items": [
             {
@@ -95,7 +97,9 @@ async def test_create_order_applies_coupon_discount(
     """测试优惠券正确应用折扣"""
     # 创建订单, 单价25元, 数量2, 应扣除最便宜的一杯(25元)
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "notes": "测试折扣",
         "items": [
             {
@@ -135,7 +139,9 @@ async def test_create_order_marks_coupon_as_used(
 ):
     """测试订单创建后优惠券被标记为已使用"""
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {
                 "product_id": test_product.product_id,
@@ -183,7 +189,9 @@ async def test_create_order_rejects_used_coupon(
     await session.commit()
 
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {
                 "product_id": test_product.product_id,
@@ -235,7 +243,9 @@ async def test_create_order_rejects_other_user_coupon(
     await session.commit()
 
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {
                 "product_id": test_product.product_id,
@@ -274,7 +284,9 @@ async def test_create_order_rejects_expired_coupon(
     await session.commit()
 
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {
                 "product_id": test_product.product_id,
@@ -308,7 +320,9 @@ async def test_create_order_without_coupon_works(
 ):
     """测试不使用优惠券也能正常创建订单"""
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {
                 "product_id": test_product.product_id,
@@ -350,7 +364,9 @@ async def test_coupon_usage_is_atomic(
     await session.commit()
 
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {
                 "product_id": test_product.product_id,
@@ -414,7 +430,9 @@ async def test_coupon_discount_on_multiple_items(
     await session.commit()
 
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "items": [
             {"product_id": product1.product_id, "quantity": 1, "spec_option_ids": []},
             {"product_id": product2.product_id, "quantity": 1, "spec_option_ids": []},
@@ -448,7 +466,9 @@ async def test_guest_user_cannot_use_coupon(
 ):
     """测试游客用户不能使用优惠券"""
     order_payload = {
-        "order_type": "pickup",
+        "shop_id": 1,
+        "delivery_type": "pickup",
+        "user_phone": "13800000000",
         "guest_session_id": "guest_123456",
         "items": [
             {

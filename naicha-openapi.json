@@ -1080,6 +1080,52 @@
         }
       }
     },
+    "/api/v1/users/phone/bind": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "绑定手机号并返回明文号码",
+        "operationId": "bind_phone_number_api_v1_users_phone_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneBindRequestSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneBindResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/guests/session": {
       "post": {
         "tags": [
@@ -3226,7 +3272,7 @@
         "title": "LoyaltyTransactionsResponseSchema",
         "description": "积分明细列表响应"
       },
-      "MenuCategorySchema": {
+      "MenuCategorySchema-Input": {
         "properties": {
           "category_id": {
             "type": "integer",
@@ -3242,7 +3288,7 @@
           },
           "products": {
             "items": {
-              "$ref": "#/components/schemas/MenuProductSchema"
+              "$ref": "#/components/schemas/MenuProductSchema-Input"
             },
             "type": "array",
             "title": "Products"
@@ -3257,7 +3303,103 @@
         ],
         "title": "MenuCategorySchema"
       },
-      "MenuProductSchema": {
+      "MenuCategorySchema-Output": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/MenuProductSchema-Output"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "sort_order",
+          "products"
+        ],
+        "title": "MenuCategorySchema"
+      },
+      "MenuProductSchema-Input": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "inventory_status": {
+            "type": "string",
+            "title": "Inventory Status"
+          },
+          "spec_groups": {
+            "items": {
+              "$ref": "#/components/schemas/MenuSpecGroupSchema"
+            },
+            "type": "array",
+            "title": "Spec Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "description",
+          "image_url",
+          "base_price",
+          "status",
+          "inventory_status",
+          "spec_groups"
+        ],
+        "title": "MenuProductSchema"
+      },
+      "MenuProductSchema-Output": {
         "properties": {
           "product_id": {
             "type": "integer",
@@ -3326,14 +3468,14 @@
         "properties": {
           "categories": {
             "items": {
-              "$ref": "#/components/schemas/MenuCategorySchema"
+              "$ref": "#/components/schemas/MenuCategorySchema-Output"
             },
             "type": "array",
             "title": "Categories"
           },
           "uncategorized_products": {
             "items": {
-              "$ref": "#/components/schemas/MenuProductSchema"
+              "$ref": "#/components/schemas/MenuProductSchema-Output"
             },
             "type": "array",
             "title": "Uncategorized Products"
@@ -3773,6 +3915,51 @@
           "status"
         ],
         "title": "PaymentNotifyResponseSchema"
+      },
+      "PhoneBindRequestSchema": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Code",
+            "description": "getPhoneNumber 返回的 code"
+          },
+          "guest_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "PhoneBindRequestSchema"
+      },
+      "PhoneBindResponseSchema": {
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "title": "Phone Number"
+          },
+          "from_guest_session": {
+            "type": "boolean",
+            "title": "From Guest Session",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone_number"
+        ],
+        "title": "PhoneBindResponseSchema"
       },
       "PointsInfoSchema": {
         "properties": {

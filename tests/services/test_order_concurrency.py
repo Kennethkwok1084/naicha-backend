@@ -71,7 +71,9 @@ async def test_concurrent_order_creation_respects_stock(model_test_engine) -> No
             service = OrderService(session, settings)
             payload = OrderCreateRequestSchema(
                 items=[OrderItemCreateSchema(product_id=901, quantity=1, spec_option_ids=[901])],
+                shop_id=1,
                 order_type="pickup",
+                user_phone="13800000000",
             )
             try:
                 return await service.create_order(

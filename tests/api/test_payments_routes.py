@@ -64,10 +64,12 @@ async def test_payment_notify_after_order_created_via_api(model_test_engine) -> 
                 "/api/v1/orders",
                 headers={"Idempotency-Key": "perf-order-900"},
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": product.product_id, "quantity": 1, "spec_option_ids": []}
+                        {"product_id": product.product_id, "quantity": 1, "selected_specs": []}
                     ],
-                    "order_type": "pickup",
                     "guest_session_id": guest_session_id,
                 },
             )

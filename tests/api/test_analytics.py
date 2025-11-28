@@ -283,3 +283,82 @@ class TestAnalyticsEventsAPI:
         if response.status_code == 200:
             assert data["status"] == "healthy"
             assert "queue_size" in data
+
+    async def test_batch_report_events_respects_configured_queue(
+        self, async_client: AsyncClient, monkeypatch
+    ):
+        """测试埋点任务投递使用配置的队列名而非硬编码"""
+        from unittest.mock import MagicMock, patch
+
+        from app.core.settings import get_settings
+
+        # 模拟自定义队列名
+        custom_queue_name = "custom_analytics_queue"
+        settings = get_settings()
+        monkeypatch.setattr(settings, "analytics_queue_name", custom_queue_name)
+
+        # Mock Celery task 的 apply_async 方法
+        with patch(
+            "app.api.routes.analytics.batch_ingest_analytics_events.apply_async"
+        ) as mock_apply_async:
+            mock_apply_async.return_value = MagicMock()
+
+            events_data = {
+                "events": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "type": "event",
+                        "name": "test_queue_config",
+                        "timestamp": int(
+                            datetime.now(timezone.utc).timestamp() * 1000
+                        ),
+                        "payload": {"test": "data"},
+                    }
+                ]
+            }
+
+            response = await async_client.post(
+                "/api/v1/analytics/events",
+                json=events_data,
+                headers={"X-Session-Id": "test_session"},
+            )
+
+            assert response.status_code == 204
+
+            # 验证 apply_async 被调用，且 queue 参数使用了配置的队列名
+            mock_apply_async.assert_called_once()
+            call_kwargs = mock_apply_async.call_args.kwargs
+            assert call_kwargs["queue"] == custom_queue_name, (
+                f"期望队列名为 {custom_queue_name}, "
+                f"实际为 {call_kwargs.get('queue')}"
+            )
+
+    async def test_analytics_health_uses_configured_queue_name(
+        self, async_client: AsyncClient, monkeypatch
+    ):
+        """测试健康检查使用配置的队列键进行Redis查询"""
+        from unittest.mock import MagicMock, patch
+
+        from app.core.settings import get_settings
+
+        # 模拟自定义队列名
+        custom_queue_name = "prod_analytics"
+        settings = get_settings()
+        monkeypatch.setattr(settings, "analytics_queue_name", custom_queue_name)
+
+        # Mock Redis 客户端
+        mock_redis_client = MagicMock()
+        mock_redis_client.llen.return_value = 100  # 模拟队列长度
+
+        with patch("redis.from_url", return_value=mock_redis_client):
+            response = await async_client.get("/api/v1/analytics/health")
+
+            # 验证 llen 被调用，且使用了配置的队列名
+            mock_redis_client.llen.assert_called_once_with(custom_queue_name)
+            mock_redis_client.close.assert_called_once()
+
+            # 验证响应正常
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "healthy"
+            assert data["queue_size"] == 100

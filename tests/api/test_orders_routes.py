@@ -69,10 +69,16 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                     "Idempotency-Key": "idem-api-1",
                 },
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                        {
+                            "product_id": 101,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 101, "option_id": 101, "option_name": "珍珠"}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "无糖",
                 },
             )
@@ -112,10 +118,16 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                     "Idempotency-Key": "idem-api-1",
                 },
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                        {
+                            "product_id": 101,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 101, "option_id": 101}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "无糖",
                 },
             )
@@ -132,10 +144,16 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                 "/api/v1/orders/preview",
                 headers={"Authorization": f"Bearer {token}"},
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                        {
+                            "product_id": 101,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 101, "option_id": 101}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "无糖",
                 },
             )
@@ -208,10 +226,16 @@ async def test_create_order_api_idempotency_under_concurrency(model_test_engine)
                     "Idempotency-Key": f"idem-concurrent-{idx}",
                 },
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": PRODUCT_ID, "quantity": 1, "spec_option_ids": [SPEC_OPTION_ID]},
+                        {
+                            "product_id": PRODUCT_ID,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 503, "option_id": SPEC_OPTION_ID}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "并发下单",
                 },
             )
@@ -248,8 +272,10 @@ async def test_create_order_api_requires_guest_session(db_session) -> None:
                 "/api/v1/orders",
                 headers={"Idempotency-Key": "idem-guest-1"},
                 json={
-                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
-                    "order_type": "pickup",
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
+                    "items": [{"product_id": 101, "quantity": 1, "selected_specs": []}],
                 },
             )
             assert without_session.status_code == 400
@@ -258,8 +284,10 @@ async def test_create_order_api_requires_guest_session(db_session) -> None:
                 "/api/v1/orders",
                 headers={"Idempotency-Key": "idem-guest-2"},
                 json={
-                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
-                    "order_type": "pickup",
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
+                    "items": [{"product_id": 101, "quantity": 1, "selected_specs": []}],
                     "guest_session_id": "gs-test",
                 },
             )
@@ -305,8 +333,10 @@ async def test_create_order_api_reservation_success(db_session) -> None:
                     "Idempotency-Key": "idem-reservation-api",
                 },
                 json={
-                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
-                    "order_type": "pickup",
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
+                    "items": [{"product_id": 101, "quantity": 1, "selected_specs": []}],
                     "scheduled_at": scheduled_local.isoformat(),
                 },
             )

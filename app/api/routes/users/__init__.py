@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import get_auth_service
+from app.api.dependencies.auth import get_auth_service, get_current_user_optional
 from app.core.security import TokenScope
+from app.core.settings import Settings, get_settings
+from app.db.session import get_async_session
 from app.metrics.auth import USER_LOGIN_TOTAL
 from app.schemas import (
+    PhoneBindRequestSchema,
+    PhoneBindResponseSchema,
     UserLoginRequestSchema,
     UserLoginResponseSchema,
     UserSummarySchema,
 )
 from app.services.auth import AuthService
+from app.services.phone import PhoneBindError, PhoneService
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -53,3 +59,37 @@ async def user_login(
     except HTTPException:
         USER_LOGIN_TOTAL.labels(result="failure").inc()
         raise
+
+
+async def get_phone_service(
+    session: AsyncSession = Depends(get_async_session),
+    settings: Settings = Depends(get_settings),
+) -> PhoneService:
+    return PhoneService(session, settings)
+
+
+@router.post(
+    "/phone/bind",
+    response_model=PhoneBindResponseSchema,
+    summary="绑定手机号并返回明文号码",
+)
+async def bind_phone_number(
+    payload: PhoneBindRequestSchema,
+    phone_service: PhoneService = Depends(get_phone_service),
+    current_user=Depends(get_current_user_optional),
+) -> PhoneBindResponseSchema:
+    try:
+        phone_number = await phone_service.bind_phone(
+            code=payload.code,
+            user=current_user,
+            guest_session_id=payload.guest_session_id,
+        )
+        return PhoneBindResponseSchema(
+            phone_number=phone_number,
+            from_guest_session=current_user is None,
+        )
+    except PhoneBindError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc

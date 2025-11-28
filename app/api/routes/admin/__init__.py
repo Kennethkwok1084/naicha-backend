@@ -195,13 +195,15 @@ async def create_pos_order(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Buyer not found.",
-            )
+    )
 
     order_payload = OrderCreateRequestSchema(
         items=payload.items,
         order_type=payload.order_type,
         notes=payload.notes,
         guest_session_id=payload.guest_session_id,
+        shop_id=1,
+        user_phone=payload.buyer_phone or "pos_order",
     )
 
     order_service = OrderService(session, settings)

@@ -51,9 +51,11 @@ async def test_reservation_flow_end_to_end(db_session) -> None:
         scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=2)
         create_payload = OrderCreateRequestSchema(
             items=[OrderItemCreateSchema(product_id=product.product_id, quantity=1, spec_option_ids=[])],
+            shop_id=1,
             order_type="pickup",
             scheduled_at=scheduled_local,
             notes="预约E2E",
+            user_phone="13800000000",
         )
 
         created = await order_service.create_order(

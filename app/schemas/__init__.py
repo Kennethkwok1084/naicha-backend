@@ -55,6 +55,7 @@ from .order import (
     OrderCreateRequestSchema,
     OrderDeliveryAddressSchema,
     OrderItemCreateSchema,
+    OrderItemSelectedSpecSchema,
     OrderItemSchema,
     OrderPaymentInitiateResponseSchema,
     OrderPaymentJsapiRequestSchema,
@@ -83,6 +84,8 @@ from .user import (
     UserAddressSchema,
     UserAddressUpdateSchema,
     UserProfileSchema,
+    PhoneBindRequestSchema,
+    PhoneBindResponseSchema,
 )
 from .want import (
     WantDailyPointSchema,
@@ -147,6 +150,7 @@ __all__ = [
     "OrderCreateRequestSchema",
     "OrderDeliveryAddressSchema",
     "OrderItemCreateSchema",
+    "OrderItemSelectedSpecSchema",
     "OrderItemSchema",
     "OrderPaymentInitiateResponseSchema",
     "OrderPaymentJsapiRequestSchema",
@@ -172,6 +176,8 @@ __all__ = [
     "UserLoginRequestSchema",
     "UserLoginResponseSchema",
     "UserProfileSchema",
+    "PhoneBindRequestSchema",
+    "PhoneBindResponseSchema",
     "UserSummarySchema",
     "WantDailyPointSchema",
     "WantRecordResponseSchema",

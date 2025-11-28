@@ -187,6 +187,8 @@ class OrderService:
         )
         if not idempotency_key.strip():
             raise OrderValidationError("Idempotency-Key header is required.")
+        if not payload.user_phone:
+            raise OrderValidationError("下单时必须填写 user_phone 以便联系取餐/配送。")
 
         actor_guest_session = payload.guest_session_id
         if user is None and not actor_guest_session:
@@ -194,7 +196,9 @@ class OrderService:
         if payload.order_type == "delivery" and payload.address is None:
             raise OrderValidationError("Delivery order requires address.")
 
-        payload_dict = payload.model_dump(mode="json")
+        payload_dict = self._normalize_payload_for_idempotency(
+            payload.model_dump(mode="json")
+        )
         payload_hash = self._hash_payload(payload_dict)
 
         tx = self._session.get_transaction()
@@ -583,6 +587,16 @@ class OrderService:
         if record.expire_at and record.expire_at < datetime.now(tz=UTC):
             raise OrderValidationError("Guest session has expired.")
 
+    @staticmethod
+    def _normalize_payload_for_idempotency(payload_dict: dict[str, Any]) -> dict[str, Any]:
+        """剔除不影响语义的字段，避免因规格文案差异导致幂等冲突。"""
+        items = payload_dict.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    item.pop("selected_specs", None)
+        return payload_dict
+
     async def _load_products_with_groups(
         self,
         items,
@@ -656,6 +670,8 @@ class OrderService:
         order_number = self._generate_order_number()
         pickup_code = self._generate_pickup_code()
         address_json = payload.address.model_dump() if payload.address else None
+        if payload.user_phone:
+            address_json = {**(address_json or {}), "phone": payload.user_phone}
         scheduled_at = reservation_plan.scheduled_at_utc if reservation_plan else None
         reservation_slot_id = reservation_plan.slot_id if reservation_plan else None
 

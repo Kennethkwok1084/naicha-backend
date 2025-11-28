@@ -227,6 +227,42 @@
 - **变更历史**：
   - 2025-10-10：首次发布
 
+### 绑定手机号
+- **状态**：新增 （日期：2025-11-24）
+- **路径/方法**：`POST /api/v1/users/phone/bind`
+- **权限**：用户 JWT | 游客（需 `guest_session_id`）
+- **幂等要求**：否
+- **限流**：继承全局 SlowAPI 设置
+- **请求体**：
+```json
+{
+  "code": "getPhoneNumber-code",
+  "guest_session_id": "gs_xxx"
+}
+```
+- **字段说明**：
+  - `code`：微信 `getPhoneNumber` 返回码，必填。
+  - `guest_session_id`：游客绑定时必填，登录用户可不填。
+- **响应体**：
+```json
+{
+  "phone_number": "13800001234",
+  "from_guest_session": false
+}
+```
+- **错误码**：
+  - 400 code 为空或 guest_session_id 无效/过期。
+- **副作用**：
+  - 登录用户：写入 `users.preferences_json.phone_number`
+  - 游客：回填到 `idempotency_keys.response_snapshot` 供后续下单使用
+- **审计记录**：无
+- **测试清单**：
+  - [x] 登录用户绑定
+  - [x] 游客携带 guest_session_id 绑定
+  - [ ] 错误码校验（code 为空 / 会话过期）
+- **变更历史**：
+  - 2025-11-24：首次发布
+
 ### 获取门店基础信息
 - **状态**：新增 （日期：2025-10-15）；更新 （日期：2025-10-31）
 - **路径/方法**：`GET /api/v1/shop/profile`
@@ -1058,7 +1094,7 @@
   - 2025-10-27：首次发布
 
 ### 订单价格试算
-- **状态**：新增 （日期：2025-10-31）；更新（日期：2025-11-08，增加 ETA 字段与别名）
+- **状态**：新增 （日期：2025-10-31）；更新（日期：2025-11-24，统一请求体字段）
 - **路径/方法**：`POST /api/v1/orders/calculate-price`（别名：`POST /api/v1/orders/preview`）
 - **权限**：用户 JWT | 游客（未登录状态下无法使用优惠券/积分）
 - **幂等要求**：否（纯读操作）
@@ -1066,30 +1102,47 @@
 - **请求体**：
 ```json
 {
+  "shop_id": 1,
+  "delivery_type": "pickup",
+  "dining_type": "takeout",
+  "scheduled_at": "2025-10-21T09:30:00+08:00",
+  "address": {
+    "address": "深圳市南山区科技园",
+    "detail": "XX大厦1层",
+    "name": "林小白",
+    "phone": "13800001234",
+    "lat": 22.543096,
+    "lng": 114.057865
+  },
+  "user_phone": "13800001234",
+  "coupon_id": 12345,
+  "use_points": true,
+  "notes": "少冰",
   "items": [
     {
       "product_id": 101,
       "quantity": 2,
-      "spec_option_ids": [1001, 1002]
+      "selected_specs": [
+        { "spec_id": 1001, "option_id": 1001, "option_name": "少糖" },
+        { "spec_id": 1002, "option_id": 1004, "option_name": "加珍珠", "price_modifier": 2.0 }
+      ]
     }
   ],
-  "coupon_id": 12345,
-  "points_use": 200,
-  "order_type": "delivery",
-  "address": {
-    "province": "广东省",
-    "city": "深圳市",
-    "district": "南山区",
-    "detail": "科技园XXX"
-  }
+  "guest_session_id": "gs_xxx"
 }
 ```
 - **请求字段说明**：
-  - `items`：与创建订单一致，最多 30 条。
-  - `coupon_id`：可选，仅登录用户可用，服务端验证适用性但不核销。
-  - `points_use`：可选，使用积分数量，整数且 `0 <= points_use <= 可用积分`，最多抵扣应付金额的 30%（100 积分=1元）。
-  - `order_type`：`pickup` / `delivery` / `dine_in`，当为 `delivery` 时必须提供 `address`。
-  - `address`：配送地址结构化字段，仅在 `delivery` 场景必填。
+  - `shop_id`：必填，门店 ID。
+  - `delivery_type`：`pickup` / `delivery`，下单/试算共用字段；兼容 `order_type` 作为别名。
+  - `dining_type`：可选，就餐方式（`dine-in` / `takeout`）。
+  - `scheduled_at`：可选，ISO8601 且必须带时区，预约仅支持自提。
+  - `address`：当 `delivery_type=delivery` 时必填，包含 `address/detail/name/phone/lat/lng`。
+  - `user_phone`：试算可选，创建订单必填，用于联系，可配合游客会话使用。
+  - `coupon_id`：可选，仅登录用户可用。
+  - `use_points`：布尔开关，开启后自动按上限使用积分（兼容旧字段 `points_use`）。
+  - `notes`：备注，最长 200。
+  - `items[].selected_specs`：规格选择，最少包含 `option_id`；服务端按商品映射落库价差。
+  - `guest_session_id`：游客必填，来自 `/api/v1/guests/session`。
 - **响应体**：
 ```json
 {
@@ -1120,30 +1173,24 @@
     "reason": ""
   },
   "points_info": {
-    "available": 500,
-    "used": 100,
-    "discount": 1.0,
+    "available": 5000,
+    "used": 200,
+    "discount": 2.0,
     "exchange_rate": 100
   },
-  "eta_minutes": 20,
-  "eta_text": "约 20 分钟"
+  "eta_minutes": 15,
+  "eta_text": "预计 15 分钟后可取餐"
 }
 ```
-- **响应说明**：
-  - `subtotal`：商品金额（含规格），未扣减优惠。
-  - `coupon_discount`：优惠券抵扣金额，最小为 0。
-  - `points_discount`：积分抵扣金额，最多为 `0.3 * (subtotal - coupon_discount)`。
-  - `delivery_fee`：`delivery` 且金额 < 30 收取 6 元，否则 0。
-  - `final_amount = max(0, subtotal - coupon_discount - points_discount + delivery_fee)`。
-  - `breakdown`：逐品项明细，含规格及单价。
+- **字段说明**：
+  - `breakdown`：逐行单品明细，含规格与小计。
   - `coupon_info`：优惠券适配结果，不适用时 `is_applicable=false` 并在 `reason` 中说明原因。
   - `points_info`：积分余额与实际抵扣，登录用户即使未使用积分也会返回可用余额。
   - `eta_minutes` / `eta_text`：预计等待/送达时间，按商品数量与配送方式估算。
 - **错误码**：
   - 400 商品不存在 / 下架 / 库存不足。
-  - 400 未登录却传入 `coupon_id` / `points_use`。
-  - 400 优惠券不存在、未达到门槛或类型不支持。
-  - 400 配送单未提供地址。
+  - 400 未登录却传入 `coupon_id` / `use_points=true`。
+  - 400 配送单未提供地址 / 缺少 `shop_id` 或 `delivery_type`。
 - **副作用**：无（不写库、不扣库存、不核销优惠券）
 - **审计记录**：不记录
 - **观测指标**：待补（可追加 `order_calculate_price_latency_ms`）
@@ -1154,10 +1201,10 @@
   - [x] 配送费（未满 30 收费、满 30 免配送）
   - [ ] 性能阈值（P95 < 50ms）
 - **变更历史**：
+  - 2025-11-24：请求体改为共用 schema（shop_id/delivery_type/user_phone/use_points/selected_specs）
   - 2025-10-31：首次发布
-
 ### 创建订单
-- **状态**：新增 （日期：2025-10-17）；更新（日期：2025-11-08，新增 ETA 与取餐码字段）
+- **状态**：新增 （日期：2025-10-17）；更新（日期：2025-11-24，统一请求体并强制联系方式）
 - **路径/方法**：`POST /api/v1/orders`
 - **权限**：用户 JWT | 游客（需有效 `guest_session_id`）
 - **幂等要求**：是 (`Idempotency-Key` 请求头)
@@ -1165,29 +1212,40 @@
 - **请求体**：
 ```json
 {
-  "items": [
-    {
-      "product_id": 101,
-      "quantity": 2,
-      "spec_option_ids": [1001, 1002]
-    }
-  ],
-  "order_type": "pickup",
+  "shop_id": 1,
+  "delivery_type": "pickup",
+  "user_phone": "13800001234",
   "notes": "少冰",
   "guest_session_id": "gs_xxx",
   "scheduled_at": "2025-10-21T09:30:00+08:00",
   "coupon_id": 12345,
   "address": {
-    "contact_name": "林小白",
+    "address": "上海市虹口区 XXX 路",
+    "detail": "6号楼 101",
+    "name": "林小白",
     "phone": "13800001234",
-    "address_line": "上海市虹口区 XXX 路",
     "lat": 31.2304,
     "lng": 121.4737
-  }
+  },
+  "items": [
+    {
+      "product_id": 101,
+      "quantity": 2,
+      "selected_specs": [
+        { "spec_id": 201, "option_id": 3001, "option_name": "去冰" },
+        { "spec_id": 202, "option_id": 3002, "option_name": "少糖" }
+      ]
+    }
+  ]
 }
 ```
 - **请求字段说明**：
-  - `coupon_id` (可选): 优惠券ID，仅登录用户可用。使用 `free_any_drink` 类型优惠券时，自动免除订单中最便宜的一杯价格。
+  - `shop_id` / `delivery_type` / `items` / `user_phone`：必填，`delivery_type` 兼容 `order_type` 作为别名。
+  - `guest_session_id`：游客下单必填，来源 `/api/v1/guests/session`。
+  - `scheduled_at`：可选，自提预约时间，需带时区且受开关/容量限制。
+  - `coupon_id`：可选，仅登录用户可用，订单创建时会核销。
+  - `notes`：备注，最长 200。
+  - `items[].selected_specs`：规格选择，至少提供 `option_id`，其余字段用于透传文案。
 - **响应字段补充**：
   - `eta_minutes` / `eta_text`：下单时的预计等待/送达时间。
   - `pickup_code`：取餐码（自取/前台核验展示）。
@@ -1203,53 +1261,42 @@
   "is_scheduled": true,
   "scheduled_at": "2025-10-21T01:30:00+00:00",
   "reminder_sent_at": null,
-  "eta_minutes": 25,
-  "eta_text": "预计 2025-10-21T01:30:00+00:00",
-  "pickup_code": "238901",
+  "eta_minutes": 15,
+  "eta_text": "预计 15 分钟后可取餐",
+  "pickup_code": "1234",
   "items": [
     {
-      "item_id": 12345,
+      "item_id": 1,
       "product_id": 101,
-      "product_name": "桂花乌龙",
+      "product_name": "珍珠奶茶",
       "quantity": 2,
       "unit_price": 13.0,
-      "selected_specs": [
-        {
-          "group_id": 100,
-          "group_name": "甜度",
-          "option_id": 1001,
-          "option_name": "半糖",
-          "price_modifier": 0.0
-        }
-      ]
+      "selected_specs": []
     }
   ]
 }
 ```
 - **错误码**：
-  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架 / 预约档期已满 / 优惠券不存在、已使用或不属于当前用户
-  - 422 预约时间不合法（非当日/未在营业时间/未带时区）
-  - 403 游客会话不匹配目标订单
-  - 409 Idempotency-Key 与历史请求不一致
-- **预约容量**：默认以 `RESERVATION_SLOT_GRANULARITY_MINUTES=15` 分钟为档期粒度，且每个档期至多 `RESERVATION_SLOT_CAPACITY=10` 单（可通过环境变量调优）
-- **副作用**：写库 `orders`、`order_items`、`idempotency_keys`
-- **审计记录**：暂不写入
+  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id`。
+  - 400 商品不存在 / 下架 / 库存不足 / 配送缺少 address / user_phone 为空。
+  - 400 优惠券不存在、已使用或不属于当前用户。
+  - 400 预约未开启 / 超出可预约时间 / 档期已满。
+  - 409 幂等冲突（重复 Idempotency-Key 与不同请求体）。
+- **副作用**：写库 `orders/order_items/idempotency_keys`，扣减库存，必要时占用预约时间段。
+- **审计记录**：无
 - **观测指标**：
-  - `order_create_total{result=success|service_error|unexpected_error}`
-  - `inventory_deduction_total{result=success|insufficient|restored}`
-  - `inventory_current_stock{product_id}`
-  - `inventory_oversell_total{product_id}`
+  - `order_create_total{result}`
+  - `inventory_deduction_total{result}`
 - **测试清单**：
-  - [x] 正常流
-  - [x] 参数校验（游客无 session、规格越权）
-  - [ ] 权限校验
-  - [x] 幂等 / 并发
-  - [ ] 性能阈值
+  - [x] 正常流（用户/游客）
+  - [x] 幂等（重复提交同一键）
+  - [x] 库存扣减与售罄切换
+  - [x] 预约容量/营业时间校验
+  - [ ] 性能阈值（P95 < 50ms）
 - **变更历史**：
+  - 2025-11-24：请求体统一（shop_id/delivery_type/user_phone/selected_specs），备注长度收紧
+  - 2025-11-08：新增 ETA 与取餐码字段
   - 2025-10-17：首次发布
-  - 2025-10-24：支持预约下单（`scheduled_at` 字段，需携带时区；仅 pickup，当日+提前 15 分钟）
-  - 2025-11-08：返回 ETA（分钟+文案）与取餐码
-
 ### 获取订单详情
 - **状态**：新增 （日期：2025-11-08）
 - **路径/方法**：`GET /api/v1/orders/{order_id}`
