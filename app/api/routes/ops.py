@@ -43,7 +43,9 @@ async def trigger_auto_cancel_orders(
     cutoff_minutes = max(min(cutoff_minutes, 1440), 1)
     cutoff = datetime.now(tz=UTC) - timedelta(minutes=cutoff_minutes)
     limit = max(min(payload.limit, 500), 1)
-    reason = (payload.reason or "auto_cancel.manual_trigger").strip() or "auto_cancel.manual_trigger"
+    reason = (
+        payload.reason or "auto_cancel.manual_trigger"
+    ).strip() or "auto_cancel.manual_trigger"
 
     service = OrderService(session, settings)
     transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()

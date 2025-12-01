@@ -19,6 +19,7 @@ from app.ws.manager import merchant_notifier
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
+
 @router.websocket("/ws/merchant")
 async def merchant_ws_gateway(
     websocket: WebSocket,
@@ -51,7 +52,7 @@ async def merchant_ws_gateway(
         if admin is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Admin not found")
             return
-        
+
         await websocket.accept()
         logger.info("websocket_accepted", admin_id=admin_id)
         await merchant_notifier.register(websocket)
@@ -63,7 +64,7 @@ async def merchant_ws_gateway(
         await _send_recent_orders(session, websocket, settings)
         logger.info("sent_recent_orders", admin_id=admin_id)
         break  # 完成初始化后立即退出,释放session
-    
+
     logger.info("entering_message_loop", admin_id=admin_id)
     # session已释放,开始心跳和消息循环
     last_pong = datetime.now(tz=UTC)
@@ -84,7 +85,9 @@ async def merchant_ws_gateway(
                         )
                     break
                 try:
-                    await websocket.send_json({"type": "ping", "ts": datetime.now(tz=UTC).isoformat()})
+                    await websocket.send_json(
+                        {"type": "ping", "ts": datetime.now(tz=UTC).isoformat()}
+                    )
                 except WebSocketDisconnect:
                     break
                 except Exception:

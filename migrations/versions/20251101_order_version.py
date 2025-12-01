@@ -20,9 +20,8 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "orders",
-        sa.Column("version", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("version", sa.Integer(), nullable=False, server_default=sa.text("0")),
     )
-    op.alter_column("orders", "version", server_default=None)
 
 
 def downgrade() -> None:

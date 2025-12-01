@@ -39,11 +39,11 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.time()
-        
+
         response = await call_next(request)
-        
+
         duration_ms = (time.time() - start_time) * 1000
-        
+
         # 记录慢请求(超过500ms)
         if duration_ms > 500:
             logger.warning(
@@ -53,20 +53,20 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
                 status_code=response.status_code,
             )
-        
+
         # 在响应头中添加性能指标
         response.headers["X-Process-Time"] = f"{duration_ms:.2f}ms"
-        
+
         return response
 
 
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     """
     限制请求体大小,防止恶意大包攻击
-    
+
     注意: 此中间件应放在中间件链前端,在日志/限流之前执行
     """
-    
+
     def __init__(self, app, max_body_size: int = 32768):
         """
         Args:
@@ -74,7 +74,7 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         """
         super().__init__(app)
         self.max_body_size = max_body_size
-    
+
     async def dispatch(self, request: Request, call_next) -> Response:
         # 只检查可能有请求体的方法
         if request.method in ["POST", "PUT", "PATCH"]:
@@ -84,6 +84,7 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
                     size = int(content_length)
                     if size > self.max_body_size:
                         from starlette.responses import JSONResponse
+
                         logger.warning(
                             "request_body_too_large",
                             content_length=size,
@@ -98,7 +99,7 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
                         )
                 except ValueError:
                     pass  # Content-Length格式错误,由后续处理
-        
+
         return await call_next(request)
 
 

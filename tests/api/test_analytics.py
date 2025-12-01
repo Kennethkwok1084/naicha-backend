@@ -1,6 +1,7 @@
 """用户行为分析埋点API测试"""
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -20,7 +21,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "add_to_cart",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                     "payload": {
                         "productId": 123,
                         "productName": "珍珠奶茶",
@@ -32,7 +33,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "page",
                     "name": "page_view",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                     "payload": {
                         "path": "/pages/menu/index",
                         "referrer": "/pages/index/index",
@@ -51,9 +52,7 @@ class TestAnalyticsEventsAPI:
         assert response.status_code == 204
         assert response.content == b""
 
-    async def test_batch_report_events_success_with_session_id(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_success_with_session_id(self, async_client: AsyncClient):
         """测试匿名用户携带X-Session-Id批量上报埋点事件"""
         events_data = {
             "events": [
@@ -61,7 +60,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "product_click",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                     "payload": {"productId": 456},
                 }
             ]
@@ -75,9 +74,7 @@ class TestAnalyticsEventsAPI:
 
         assert response.status_code == 204
 
-    async def test_batch_report_events_missing_session_id(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_missing_session_id(self, async_client: AsyncClient):
         """测试匿名用户缺少X-Session-Id返回400"""
         events_data = {
             "events": [
@@ -85,21 +82,17 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "test_event",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                 }
             ]
         }
 
-        response = await async_client.post(
-            "/api/v1/analytics/events", json=events_data
-        )
+        response = await async_client.post("/api/v1/analytics/events", json=events_data)
 
         assert response.status_code == 400
         assert "X-Session-Id" in response.json()["detail"]
 
-    async def test_batch_report_events_payload_too_large(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_payload_too_large(self, async_client: AsyncClient):
         """测试payload超过8KB返回422"""
         large_payload = {"data": "x" * 10000}  # 超过8KB
         events_data = {
@@ -108,7 +101,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "test_event",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                     "payload": large_payload,
                 }
             ]
@@ -123,9 +116,7 @@ class TestAnalyticsEventsAPI:
         assert response.status_code == 422
         assert "payload" in response.text.lower()
 
-    async def test_batch_report_events_too_many_fields(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_too_many_fields(self, async_client: AsyncClient):
         """测试payload字段数超过30个返回422"""
         many_fields_payload = {f"field_{i}": i for i in range(35)}  # 超过30个字段
         events_data = {
@@ -134,7 +125,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "test_event",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                     "payload": many_fields_payload,
                 }
             ]
@@ -158,7 +149,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "test_event",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                     "payload": deep_nested,
                 }
             ]
@@ -173,9 +164,7 @@ class TestAnalyticsEventsAPI:
         assert response.status_code == 422
         assert "4" in response.text or "层" in response.text
 
-    async def test_batch_report_events_duplicate_ids(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_duplicate_ids(self, async_client: AsyncClient):
         """测试批次内存在重复事件ID返回422"""
         duplicate_id = str(uuid.uuid4())
         events_data = {
@@ -184,13 +173,13 @@ class TestAnalyticsEventsAPI:
                     "id": duplicate_id,
                     "type": "event",
                     "name": "event1",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                 },
                 {
                     "id": duplicate_id,  # 重复ID
                     "type": "event",
                     "name": "event2",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                 },
             ]
         }
@@ -204,9 +193,7 @@ class TestAnalyticsEventsAPI:
         assert response.status_code == 422
         assert "重复" in response.text or "duplicate" in response.text.lower()
 
-    async def test_batch_report_events_max_batch_size(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_max_batch_size(self, async_client: AsyncClient):
         """测试批次最多10条事件"""
         # 正常情况：恰好10条
         events_data = {
@@ -215,7 +202,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": f"event_{i}",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                 }
                 for i in range(10)
             ]
@@ -236,7 +223,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": f"event_{i}",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                 }
                 for i in range(11)
             ]
@@ -250,9 +237,7 @@ class TestAnalyticsEventsAPI:
 
         assert response.status_code == 422
 
-    async def test_batch_report_events_invalid_event_name(
-        self, async_client: AsyncClient
-    ):
+    async def test_batch_report_events_invalid_event_name(self, async_client: AsyncClient):
         """测试非法事件名返回422"""
         events_data = {
             "events": [
@@ -260,7 +245,7 @@ class TestAnalyticsEventsAPI:
                     "id": str(uuid.uuid4()),
                     "type": "event",
                     "name": "invalid name!@#",  # 包含特殊字符
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                 }
             ]
         }
@@ -309,9 +294,7 @@ class TestAnalyticsEventsAPI:
                         "id": str(uuid.uuid4()),
                         "type": "event",
                         "name": "test_queue_config",
-                        "timestamp": int(
-                            datetime.now(timezone.utc).timestamp() * 1000
-                        ),
+                        "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                         "payload": {"test": "data"},
                     }
                 ]
@@ -329,8 +312,7 @@ class TestAnalyticsEventsAPI:
             mock_apply_async.assert_called_once()
             call_kwargs = mock_apply_async.call_args.kwargs
             assert call_kwargs["queue"] == custom_queue_name, (
-                f"期望队列名为 {custom_queue_name}, "
-                f"实际为 {call_kwargs.get('queue')}"
+                f"期望队列名为 {custom_queue_name}, " f"实际为 {call_kwargs.get('queue')}"
             )
 
     async def test_analytics_health_uses_configured_queue_name(

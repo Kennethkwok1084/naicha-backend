@@ -109,7 +109,9 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
     assert payment.qr_session_id == "qr-session-1"
 
     print_jobs = list(
-        (await db_session.execute(select(PrintJob).where(PrintJob.order_id == order.order_id))).scalars()
+        (
+            await db_session.execute(select(PrintJob).where(PrintJob.order_id == order.order_id))
+        ).scalars()
     )
     assert len(print_jobs) == 1
     assert enqueued == [print_jobs[0].job_id]
@@ -291,7 +293,9 @@ async def test_admin_payment_match_manual_force_success(db_session, monkeypatch)
     assert order_b.status == "paid"
 
     print_jobs = list(
-        (await db_session.execute(select(PrintJob).where(PrintJob.order_id == order_b.order_id))).scalars()
+        (
+            await db_session.execute(select(PrintJob).where(PrintJob.order_id == order_b.order_id))
+        ).scalars()
     )
     assert len(print_jobs) == 1
     assert enqueued == [print_jobs[0].job_id]

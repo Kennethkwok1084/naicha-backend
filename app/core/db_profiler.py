@@ -1,4 +1,5 @@
 """数据库查询性能分析工具"""
+
 from __future__ import annotations
 
 import time

@@ -192,8 +192,8 @@ def invalidate_menu_cache(settings: Settings | None = None) -> None:
     else:
         task = loop.create_task(_bump_async())  # Fire and forget background task
         # 保持对task的引用避免被垃圾回收,但不等待结果
-        _background_tasks = getattr(loop, '_menu_bump_tasks', set())
-        if not hasattr(loop, '_menu_bump_tasks'):
+        _background_tasks = getattr(loop, "_menu_bump_tasks", set())
+        if not hasattr(loop, "_menu_bump_tasks"):
             loop._menu_bump_tasks = _background_tasks  # type: ignore
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
@@ -223,9 +223,7 @@ class MenuService:
         categories_list = list(categories.scalars())
 
         product_stmt = (
-            select(Product)
-            .options(selectinload(Product.categories))
-            .order_by(Product.product_id)
+            select(Product).options(selectinload(Product.categories)).order_by(Product.product_id)
         )
         products_result = await self._session.execute(product_stmt)
         products = [product for product in products_result.scalars() if product.status == "active"]
@@ -296,8 +294,9 @@ class MenuService:
         groups = result.scalars().all()
 
         options_result = await self._session.execute(
-            select(SpecOption)
-            .order_by(SpecOption.group_id, SpecOption.sort_order, SpecOption.option_id)
+            select(SpecOption).order_by(
+                SpecOption.group_id, SpecOption.sort_order, SpecOption.option_id
+            )
         )
         options = options_result.scalars().all()
 

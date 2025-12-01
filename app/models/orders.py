@@ -38,9 +38,7 @@ class Order(Base, TimestampMixin):
     payment_status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'pending'")
     )
-    source: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'user'")
-    )
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'user'"))
     created_by_admin_id: Mapped[int | None] = mapped_column(
         ForeignKey("admins.admin_id"), nullable=True
     )

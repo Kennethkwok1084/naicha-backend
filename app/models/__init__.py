@@ -1,4 +1,12 @@
-from app.models.accounts import Admin, Coupon, LoyaltyTransaction, User, UserAddress
+from app.models.accounts import (
+    Admin,
+    Coupon,
+    LoyaltyTransaction,
+    TokenBlacklist,
+    User,
+    UserAddress,
+    WeChatUsedCode,
+)
 from app.models.advertisement import AdCreative, AdPlacement, AdSlot
 from app.models.analytics import AnalyticsEvent
 from app.models.catalog import (
@@ -48,7 +56,9 @@ __all__ = [
     "ShopSetting",
     "SpecGroup",
     "SpecOption",
+    "TokenBlacklist",
     "User",
     "UserAddress",
     "WantEvent",
+    "WeChatUsedCode",
 ]

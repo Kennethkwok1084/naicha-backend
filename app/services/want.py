@@ -103,7 +103,9 @@ class WantService:
         tz = ZoneInfo("Asia/Shanghai")
         reference_time = reference or datetime.now(tz=UTC)
         end_local = reference_time.astimezone(tz)
-        start_local = (end_local - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_local = (end_local - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         start_utc = start_local.astimezone(UTC)
 
         events = await self._fetch_events_since(start_utc)
@@ -172,7 +174,11 @@ class WantService:
         return result.scalar_one_or_none() is not None
 
     async def _fetch_events_since(self, start: datetime) -> list[WantEvent]:
-        stmt = select(WantEvent).where(WantEvent.created_at >= start).order_by(WantEvent.created_at.asc())
+        stmt = (
+            select(WantEvent)
+            .where(WantEvent.created_at >= start)
+            .order_by(WantEvent.created_at.asc())
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

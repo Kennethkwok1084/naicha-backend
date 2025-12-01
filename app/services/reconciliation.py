@@ -62,7 +62,9 @@ class ReconciliationService:
         payments = await self._fetch_payments(range_start, range_end)
         refunds = await self._fetch_refunds(range_start, range_end)
 
-        matched_order_ids = {record.matched_order_id for record in payments if record.matched_order_id}
+        matched_order_ids = {
+            record.matched_order_id for record in payments if record.matched_order_id
+        }
         matched_refund_order_ids = {
             record.matched_order_id for record in refunds if record.matched_order_id
         }
@@ -82,8 +84,7 @@ class ReconciliationService:
         unmatched_payments = [
             self._serialize_payment(record)
             for record in payments
-            if not record.matched_order_id
-            or record.match_status in {"unmatched", "failed"}
+            if not record.matched_order_id or record.match_status in {"unmatched", "failed"}
         ]
 
         result = ReconciliationResult(
@@ -104,9 +105,7 @@ class ReconciliationService:
         )
 
         csv_requested = (
-            csv_enabled
-            if csv_enabled is not None
-            else self._settings.reconciliation_csv_enabled
+            csv_enabled if csv_enabled is not None else self._settings.reconciliation_csv_enabled
         )
 
         if csv_requested:

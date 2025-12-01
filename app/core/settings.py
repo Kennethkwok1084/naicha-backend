@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     # Performance testing secret key for payment callback simulation
     perf_secret_key: str | None = Field(default=None, alias="PERF_SECRET_KEY")
 
+    # WeChat Mini Program credentials
+    wechat_appid: str = Field(default="test_appid", alias="WECHAT_APPID")
+    wechat_secret: str = Field(default="test_secret", alias="WECHAT_SECRET")
+    wechat_api_timeout: int = Field(default=5, alias="WECHAT_API_TIMEOUT")
+    
+    # Token settings
+    access_token_expire_minutes: int = Field(default=120, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    refresh_token_expire_days: int = Field(default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS")
+
     database_url: str = Field(alias="DATABASE_URL")
     database_proxy_url: str | None = Field(default=None, alias="DATABASE_PROXY_URL")
     pgbouncer_host: str = Field(default="localhost", alias="PGBOUNCER_HOST")
@@ -37,12 +46,8 @@ class Settings(BaseSettings):
     reservation_enabled: bool = Field(default=False, alias="RESERVATION_ENABLED")
     want_enabled: bool = Field(default=True, alias="WANT_ENABLED")
     soldout_style: Literal["hide", "disabled"] = Field(default="hide", alias="SOLDOUT_STYLE")
-    reconciliation_csv_enabled: bool = Field(
-        default=False, alias="RECONCILIATION_CSV_ENABLED"
-    )
-    reconciliation_report_dir: str | None = Field(
-        default=None, alias="RECONCILIATION_REPORT_DIR"
-    )
+    reconciliation_csv_enabled: bool = Field(default=False, alias="RECONCILIATION_CSV_ENABLED")
+    reconciliation_report_dir: str | None = Field(default=None, alias="RECONCILIATION_REPORT_DIR")
     reservation_reminder_minutes: int = Field(default=15, alias="RESERVATION_REMINDER_MINUTES")
     reservation_slot_granularity_minutes: int = Field(
         default=15,
@@ -64,12 +69,12 @@ class Settings(BaseSettings):
     )
     print_local_max_parallel: int = Field(default=4, alias="PRINT_LOCAL_MAX_PARALLEL")
     guest_session_ttl_minutes: int = Field(default=43200, alias="GUEST_SESSION_TTL_MINUTES")
-    order_pending_timeout_minutes: int = Field(
-        default=30, alias="ORDER_PENDING_TIMEOUT_MINUTES"
-    )
+    order_pending_timeout_minutes: int = Field(default=30, alias="ORDER_PENDING_TIMEOUT_MINUTES")
     order_pending_cleanup_interval_seconds: int = Field(
         default=120, alias="ORDER_PENDING_CLEANUP_INTERVAL_SECONDS"
     )
+    pickup_code_prefix: str = Field(default="", alias="PICKUP_CODE_PREFIX")
+    pickup_code_digits: int = Field(default=6, alias="PICKUP_CODE_DIGITS")
 
     menu_cache_ttl_seconds: int = Field(default=240, alias="MENU_CACHE_TTL_SECONDS")
     merchant_ws_recent_minutes: int = Field(default=5, alias="MERCHANT_WS_RECENT_MINUTES")
@@ -112,9 +117,7 @@ class Settings(BaseSettings):
     )
     rate_limit_default: str = Field(default="300/minute", alias="RATE_LIMIT_DEFAULT")
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
-    perf_disable_http_overheads: bool = Field(
-        default=False, alias="PERF_DISABLE_HTTP_OVERHEADS"
-    )
+    perf_disable_http_overheads: bool = Field(default=False, alias="PERF_DISABLE_HTTP_OVERHEADS")
 
     @field_validator("allowed_origins_raw", mode="before")
     def ensure_string(cls, value: str) -> str:

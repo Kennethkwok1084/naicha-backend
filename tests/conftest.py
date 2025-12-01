@@ -20,7 +20,12 @@ from app.models.accounts import User
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.sql import operators
@@ -60,7 +65,7 @@ async def _get_or_create_test_engine() -> AsyncEngine:
         return _test_engine
 
     database_url = _resolve_test_database_url()
-    
+
     if "sqlite" in database_url:
         _test_engine = create_async_engine(
             database_url,
@@ -72,7 +77,7 @@ async def _get_or_create_test_engine() -> AsyncEngine:
         if "sslmode=" not in database_url:
             separator = "&" if "?" in database_url else "?"
             database_url = f"{database_url}{separator}sslmode=disable"
-        
+
         _test_engine = create_async_engine(
             database_url,
             future=True,
@@ -185,7 +190,9 @@ async def async_client(model_test_engine: AsyncEngine):
 async def test_user(session: AsyncSession) -> User:
     """创建一个默认测试用户。"""
     user_id = next(_USER_SEQ)
-    user = User(open_id=f"test-user-{user_id}", nickname="测试用户", loyalty_points=0, user_id=user_id)
+    user = User(
+        open_id=f"test-user-{user_id}", nickname="测试用户", loyalty_points=0, user_id=user_id
+    )
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -195,4 +202,6 @@ async def test_user(session: AsyncSession) -> User:
 @pytest.fixture
 def test_user_token(test_user: User) -> str:
     return create_access_token(subject=str(test_user.user_id), scope=TokenScope.USER)
+
+
 _USER_SEQ = itertools.count(1_000)

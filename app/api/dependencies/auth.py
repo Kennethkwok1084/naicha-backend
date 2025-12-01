@@ -36,6 +36,12 @@ async def get_current_admin(
     except InvalidTokenError as exc:
         raise _unauthorized(str(exc)) from exc
 
+    # 检查token黑名单
+    if payload.jti:
+        from app.core.security import is_token_blacklisted
+        if await is_token_blacklisted(payload.jti, session):
+            raise _unauthorized("Token has been revoked.")
+
     if payload.scope != TokenScope.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -66,6 +72,12 @@ async def get_current_user(
     except InvalidTokenError as exc:
         raise _unauthorized(str(exc)) from exc
 
+    # 检查token黑名单
+    if payload.jti:
+        from app.core.security import is_token_blacklisted
+        if await is_token_blacklisted(payload.jti, session):
+            raise _unauthorized("Token has been revoked.")
+
     if payload.scope != TokenScope.USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -95,6 +107,12 @@ async def get_current_user_optional(
         payload = decode_access_token(credentials.credentials)
     except InvalidTokenError as exc:
         raise _unauthorized(str(exc)) from exc
+
+    # 检查token黑名单
+    if payload.jti:
+        from app.core.security import is_token_blacklisted
+        if await is_token_blacklisted(payload.jti, session):
+            raise _unauthorized("Token has been revoked.")
 
     if payload.scope != TokenScope.USER:
         raise HTTPException(

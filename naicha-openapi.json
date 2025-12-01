@@ -1042,10 +1042,99 @@
     "/api/v1/users/login": {
       "post": {
         "tags": [
-          "users"
+          "wechat-auth"
         ],
-        "summary": "User Login",
-        "operationId": "user_login_api_v1_users_login_post",
+        "summary": "微信小程序登录",
+        "description": "使用微信一次性code登录,返回access_token和refresh_token",
+        "operationId": "wechat_login_api_v1_users_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeChatLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeChatLoginResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/phone/bind": {
+      "post": {
+        "tags": [
+          "wechat-auth"
+        ],
+        "summary": "绑定微信手机号",
+        "description": "使用微信getPhoneNumber返回的code绑定手机号",
+        "operationId": "bind_phone_api_v1_users_phone_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindPhoneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindPhoneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users-legacy/login": {
+      "post": {
+        "tags": [
+          "users-legacy"
+        ],
+        "summary": "User Login Legacy",
+        "operationId": "user_login_legacy_api_v1_users_legacy_login_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1077,16 +1166,17 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
-    "/api/v1/users/phone/bind": {
+    "/api/v1/users-legacy/phone/bind": {
       "post": {
         "tags": [
-          "users"
+          "users-legacy"
         ],
-        "summary": "绑定手机号并返回明文号码",
-        "operationId": "bind_phone_number_api_v1_users_phone_bind_post",
+        "summary": "绑定手机号并返回明文号码（已废弃）",
+        "operationId": "bind_phone_number_legacy_api_v1_users_legacy_phone_bind_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1119,6 +1209,7 @@
             }
           }
         },
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -1525,6 +1616,24 @@
               "title": "Offset"
             },
             "description": "偏移量"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "订单状态筛选，多个状态用逗号分隔。允许值: pending_payment, paid, in_production, ready_for_pickup, completed, cancelled, refund_pending, refunded",
+              "title": "Status"
+            },
+            "description": "订单状态筛选，多个状态用逗号分隔。允许值: pending_payment, paid, in_production, ready_for_pickup, completed, cancelled, refund_pending, refunded"
           }
         ],
         "responses": {
@@ -1857,6 +1966,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OrderPaymentInitiateResponseSchema"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{order_id}/cancel": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "取消订单",
+        "description": "取消订单 (仅待支付状态)",
+        "operationId": "cancel_order_api_v1_orders__order_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "guest_session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "访客会话 ID (用于访客取消订单)",
+              "title": "Guest Session Id"
+            },
+            "description": "访客会话 ID (用于访客取消订单)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponseSchema"
                 }
               }
             }
@@ -2625,6 +2800,63 @@
         "title": "BatchEventsRequest",
         "description": "批量上报埋点事件请求"
       },
+      "BindPhoneRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Code",
+            "description": "微信手机号code"
+          },
+          "guest_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Session Id",
+            "description": "游客会话ID(可选)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "BindPhoneRequest",
+        "description": "绑定手机号请求"
+      },
+      "BindPhoneResponse": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone",
+            "description": "脱敏后的手机号"
+          },
+          "from_guest_session": {
+            "type": "boolean",
+            "title": "From Guest Session",
+            "description": "是否来自游客会话"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "结果消息",
+            "default": "手机号绑定成功"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "from_guest_session"
+        ],
+        "title": "BindPhoneResponse",
+        "description": "绑定手机号响应"
+      },
       "CouponApplicabilitySchema": {
         "properties": {
           "coupon_id": {
@@ -3272,7 +3504,7 @@
         "title": "LoyaltyTransactionsResponseSchema",
         "description": "积分明细列表响应"
       },
-      "MenuCategorySchema-Input": {
+      "MenuCategorySchema": {
         "properties": {
           "category_id": {
             "type": "integer",
@@ -3288,7 +3520,7 @@
           },
           "products": {
             "items": {
-              "$ref": "#/components/schemas/MenuProductSchema-Input"
+              "$ref": "#/components/schemas/MenuProductSchema"
             },
             "type": "array",
             "title": "Products"
@@ -3303,103 +3535,7 @@
         ],
         "title": "MenuCategorySchema"
       },
-      "MenuCategorySchema-Output": {
-        "properties": {
-          "category_id": {
-            "type": "integer",
-            "title": "Category Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "sort_order": {
-            "type": "integer",
-            "title": "Sort Order"
-          },
-          "products": {
-            "items": {
-              "$ref": "#/components/schemas/MenuProductSchema-Output"
-            },
-            "type": "array",
-            "title": "Products"
-          }
-        },
-        "type": "object",
-        "required": [
-          "category_id",
-          "name",
-          "sort_order",
-          "products"
-        ],
-        "title": "MenuCategorySchema"
-      },
-      "MenuProductSchema-Input": {
-        "properties": {
-          "product_id": {
-            "type": "integer",
-            "title": "Product Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "image_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Url"
-          },
-          "base_price": {
-            "type": "number",
-            "title": "Base Price"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "inventory_status": {
-            "type": "string",
-            "title": "Inventory Status"
-          },
-          "spec_groups": {
-            "items": {
-              "$ref": "#/components/schemas/MenuSpecGroupSchema"
-            },
-            "type": "array",
-            "title": "Spec Groups"
-          }
-        },
-        "type": "object",
-        "required": [
-          "product_id",
-          "name",
-          "description",
-          "image_url",
-          "base_price",
-          "status",
-          "inventory_status",
-          "spec_groups"
-        ],
-        "title": "MenuProductSchema"
-      },
-      "MenuProductSchema-Output": {
+      "MenuProductSchema": {
         "properties": {
           "product_id": {
             "type": "integer",
@@ -3468,14 +3604,14 @@
         "properties": {
           "categories": {
             "items": {
-              "$ref": "#/components/schemas/MenuCategorySchema-Output"
+              "$ref": "#/components/schemas/MenuCategorySchema"
             },
             "type": "array",
             "title": "Categories"
           },
           "uncategorized_products": {
             "items": {
-              "$ref": "#/components/schemas/MenuProductSchema-Output"
+              "$ref": "#/components/schemas/MenuProductSchema"
             },
             "type": "array",
             "title": "Uncategorized Products"
@@ -3878,7 +4014,7 @@
               }
             ],
             "title": "Pickup Code",
-            "description": "取餐码"
+            "description": "取餐码（支付成功后生成）"
           },
           "items": {
             "items": {
@@ -5011,6 +5147,94 @@
           "total"
         ],
         "title": "WantTopProductSchema"
+      },
+      "WeChatLoginRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Code",
+            "description": "微信登录code"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname",
+            "description": "用户昵称"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url",
+            "description": "用户头像URL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "WeChatLoginRequest",
+        "description": "微信登录请求"
+      },
+      "WeChatLoginResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token",
+            "description": "访问令牌(Bearer)"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token",
+            "description": "刷新令牌"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id",
+            "description": "用户ID"
+          },
+          "is_new_user": {
+            "type": "boolean",
+            "title": "Is New User",
+            "description": "是否新用户"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "description": "令牌类型",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "access_token过期时间(秒)",
+            "default": 7200
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "user_id",
+          "is_new_user"
+        ],
+        "title": "WeChatLoginResponse",
+        "description": "微信登录响应"
       }
     },
     "securitySchemes": {

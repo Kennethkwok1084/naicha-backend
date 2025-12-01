@@ -24,7 +24,7 @@ class OrderItemCreateSchema(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _merge_selected_spec_ids(self) -> "OrderItemCreateSchema":
+    def _merge_selected_spec_ids(self) -> OrderItemCreateSchema:
         option_ids = list(self.spec_option_ids)
         if not option_ids and self.selected_specs:
             option_ids = [spec.option_id for spec in self.selected_specs if spec.option_id]
@@ -109,7 +109,7 @@ class OrderBaseRequestSchema(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _sync_points_use(self) -> "OrderBaseRequestSchema":
+    def _sync_points_use(self) -> OrderBaseRequestSchema:
         if self.use_points and self.points_use == 0:
             # 使用一个足够大的值，实际扣减时会受可用积分/封顶限制
             self.points_use = 1_000_000_000
@@ -192,7 +192,7 @@ class OrderResponseSchema(BaseModel):
     reminder_sent_at: datetime | None
     eta_minutes: int | None = Field(default=None, description="预计等待/送达分钟数")
     eta_text: str | None = Field(default=None, description="预计时间文案")
-    pickup_code: str | None = Field(default=None, description="取餐码")
+    pickup_code: str | None = Field(default=None, description="取餐码（支付成功后生成）")
     items: list[OrderItemSchema]
 
 
@@ -229,9 +229,7 @@ class OrderPaymentInitiateResponseSchema(BaseModel):
 
 class AdminOrderCreateRequestSchema(BaseModel):
     items: list[OrderItemCreateSchema] = Field(..., min_length=1, max_length=50)
-    payment_channel: Literal[
-        "wechat_jsapi", "wechat_native", "static_qr", "cash", "pos_card"
-    ]
+    payment_channel: Literal["wechat_jsapi", "wechat_native", "static_qr", "cash", "pos_card"]
     order_type: Literal["pickup"] = Field(default="pickup")
     notes: str | None = Field(default=None, max_length=500)
     print_job: bool = Field(default=True)

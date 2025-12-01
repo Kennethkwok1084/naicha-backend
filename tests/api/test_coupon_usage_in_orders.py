@@ -122,7 +122,7 @@ async def test_create_order_applies_coupon_discount(
 
     assert response.status_code == 201
     data = response.json()
-    
+
     # 原价: 25 * 2 = 50
     # 优惠券免一杯: 50 - 25 = 25
     assert float(data["total_price"]) == 25.0
@@ -343,7 +343,7 @@ async def test_create_order_without_coupon_works(
 
     assert response.status_code == 201
     data = response.json()
-    
+
     # 原价: 25 * 1 = 25
     assert float(data["total_price"]) == 25.0
 
@@ -451,7 +451,7 @@ async def test_coupon_discount_on_multiple_items(
 
     assert response.status_code == 201
     data = response.json()
-    
+
     # 原价: 15 + 35 = 50
     # 优惠券免最便宜的: 50 - 15 = 35
     assert float(data["total_price"]) == 35.0

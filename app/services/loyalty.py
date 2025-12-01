@@ -102,7 +102,9 @@ class LoyaltyService:
             return 0
 
         result = await self._session.execute(
-            select(func.coalesce(func.sum(OrderItem.quantity), 0)).where(OrderItem.order_id == order_id)
+            select(func.coalesce(func.sum(OrderItem.quantity), 0)).where(
+                OrderItem.order_id == order_id
+            )
         )
         cups = result.scalar_one()
         return int(cups or 0)
@@ -142,8 +144,10 @@ class LoyaltyService:
     ) -> tuple[list[LoyaltyTransaction], int]:
         """获取用户积分明细"""
         # 查询总数
-        count_stmt = select(func.count()).select_from(LoyaltyTransaction).where(
-            LoyaltyTransaction.user_id == user_id
+        count_stmt = (
+            select(func.count())
+            .select_from(LoyaltyTransaction)
+            .where(LoyaltyTransaction.user_id == user_id)
         )
         total_count = await self._session.scalar(count_stmt) or 0
 
@@ -217,9 +221,7 @@ class LoyaltyService:
     async def use_coupon(self, coupon_id: int, user_id: int, order_id: int) -> Coupon:
         """使用优惠券"""
         # 查询优惠券并加锁
-        stmt = select(Coupon).where(
-            Coupon.coupon_id == coupon_id, Coupon.user_id == user_id
-        )
+        stmt = select(Coupon).where(Coupon.coupon_id == coupon_id, Coupon.user_id == user_id)
         bind = self._session.get_bind()
         if bind is not None and bind.dialect.name != "sqlite":
             stmt = stmt.with_for_update()

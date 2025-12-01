@@ -18,7 +18,9 @@ from app.schemas import (
 from app.services.auth import AuthService
 from app.services.phone import PhoneBindError, PhoneService
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+# DEPRECATED: 旧版登录路由，已被微信认证路由取代
+# 保留用于测试和兼容，使用不同前缀避免冲突
+router = APIRouter(prefix="/api/v1/users-legacy", tags=["users-legacy"])
 
 
 async def _resolve_open_id(code: str) -> str:
@@ -32,8 +34,8 @@ async def _resolve_open_id(code: str) -> str:
     return open_id
 
 
-@router.post("/login", response_model=UserLoginResponseSchema)
-async def user_login(
+@router.post("/login", response_model=UserLoginResponseSchema, deprecated=True)
+async def user_login_legacy(
     payload: UserLoginRequestSchema,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserLoginResponseSchema:
@@ -71,9 +73,10 @@ async def get_phone_service(
 @router.post(
     "/phone/bind",
     response_model=PhoneBindResponseSchema,
-    summary="绑定手机号并返回明文号码",
+    summary="绑定手机号并返回明文号码（已废弃）",
+    deprecated=True,
 )
-async def bind_phone_number(
+async def bind_phone_number_legacy(
     payload: PhoneBindRequestSchema,
     phone_service: PhoneService = Depends(get_phone_service),
     current_user=Depends(get_current_user_optional),

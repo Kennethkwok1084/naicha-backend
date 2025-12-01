@@ -194,4 +194,3 @@ async def run_jobs(job_ids: Iterable[int], *, settings: Settings) -> None:
                     await service.fail_job(job, str(exc))
                 else:
                     await service.complete_job(job, result)
-

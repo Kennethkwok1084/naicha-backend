@@ -65,6 +65,7 @@ from app.services.orders import (
     OrderService,
     OrderValidationError,
 )
+from app.services.pickup_code import ensure_pickup_code
 from app.services.payment_match import (
     PaymentMatchAmbiguousError,
     PaymentMatchConflictError,
@@ -171,9 +172,7 @@ async def create_pos_order(
         )
 
     idempotency_key = (
-        request.headers.get("X-Idempotency-Key")
-        or request.headers.get("Idempotency-Key")
-        or ""
+        request.headers.get("X-Idempotency-Key") or request.headers.get("Idempotency-Key") or ""
     ).strip()
     if not idempotency_key:
         raise HTTPException(
@@ -195,7 +194,7 @@ async def create_pos_order(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Buyer not found.",
-    )
+            )
 
     order_payload = OrderCreateRequestSchema(
         items=payload.items,
@@ -219,6 +218,7 @@ async def create_pos_order(
             order.payment_status = "paid"
             order.status = "paid"
             order.updated_at = datetime.now(tz=UTC)
+            await ensure_pickup_code(order, session, settings)
         else:
             order.payment_status = "pending"
         payment_status_holder["status"] = order.payment_status

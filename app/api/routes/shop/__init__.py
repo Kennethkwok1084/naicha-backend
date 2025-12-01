@@ -79,7 +79,7 @@ async def delivery_check(
 
     result = "deliverable" if deliverable else "out_of_range"
     DELIVERY_CHECK_TOTAL.labels(result=result).inc()
-    
+
     return DeliveryCheckResponseSchema(
         deliverable=deliverable,
         distance_m=round(distance, 2),

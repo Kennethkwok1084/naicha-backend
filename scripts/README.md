@@ -226,6 +226,17 @@ alembic upgrade head
 python scripts/seed_test_data.py --clean
 ```
 
+### 错误: 序列不同步（UniqueViolationError on pk_orders）
+
+如果遇到插入订单时主键约束错误，说明数据库序列值落后于表中最大ID。运行序列修复脚本：
+```bash
+make fix-sequences
+# 或
+python scripts/fix_sequence.py
+```
+
+**注意**：`seed_test_data.py` 脚本已内置序列同步功能，正常使用不会出现此问题。
+
 ## 扩展数据
 
 如果需要添加更多测试数据，可以：

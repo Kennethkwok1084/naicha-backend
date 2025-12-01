@@ -67,10 +67,7 @@ async def list_addresses(
     try:
         addresses = await service.list_addresses(current_user.user_id)
         USER_ADDRESSES_REQUEST_TOTAL.labels(result="success").inc()
-        return [
-            _address_to_schema(address)
-            for address in addresses
-        ]
+        return [_address_to_schema(address) for address in addresses]
     except Exception:
         USER_ADDRESSES_REQUEST_TOTAL.labels(result="error").inc()
         raise
@@ -163,7 +160,9 @@ async def get_loyalty_transactions(
 async def get_coupons(
     current_user: User = Depends(get_current_user),
     service: LoyaltyService = Depends(get_loyalty_service),
-    status: str | None = Query(default=None, regex="^(active|used|expired|void)$", description="筛选状态"),
+    status: str | None = Query(
+        default=None, regex="^(active|used|expired|void)$", description="筛选状态"
+    ),
 ) -> CouponsResponseSchema:
     """获取当前用户的优惠券列表"""
     try:
@@ -202,8 +201,40 @@ async def list_my_orders(
     order_service: OrderService = Depends(get_order_service),
     limit: int = Query(default=20, ge=1, le=100, description="每页数量"),
     offset: int = Query(default=0, ge=0, description="偏移量"),
+    order_status: str | None = Query(
+        default=None,
+        alias="status",
+        description="订单状态筛选，多个状态用逗号分隔。允许值: pending_payment, paid, in_production, ready_for_pickup, completed, cancelled, refund_pending, refunded",
+    ),
 ) -> list[OrderResponseSchema]:
-    orders = await order_service.list_orders(current_user, limit=limit, offset=offset)
+    status_list: list[str] | None = None
+    if order_status:
+        status_list = [s.strip() for s in order_status.split(",") if s.strip()]
+        # 空字符串分隔后会得到空列表，保持 None
+        if not status_list:
+            status_list = None
+        else:
+            # 验证状态值
+            valid_statuses = {
+                "pending_payment",
+                "paid",
+                "in_production",
+                "ready_for_pickup",
+                "completed",
+                "cancelled",
+                "refund_pending",
+                "refunded",
+            }
+            invalid = set(status_list) - valid_statuses
+            if invalid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid status values: {', '.join(invalid)}",
+                )
+
+    orders = await order_service.list_orders(
+        current_user, limit=limit, offset=offset, status=status_list
+    )
     return [OrderResponseSchema(**order) for order in orders]
 
 

@@ -92,9 +92,7 @@ async def test_pos_order_cash_success(db_session) -> None:
     assert order.created_by_admin_id == admin.admin_id
     assert order.status == "paid"
 
-    jobs = await db_session.execute(
-        select(PrintJob).where(PrintJob.order_id == order.order_id)
-    )
+    jobs = await db_session.execute(select(PrintJob).where(PrintJob.order_id == order.order_id))
     job_records = list(jobs.scalars())
     assert len(job_records) == 1
     assert job_records[0].job_id == payload["print_job_id"]

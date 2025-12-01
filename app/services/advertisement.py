@@ -304,7 +304,9 @@ class AdvertisementService:
         result = await self._session.execute(stmt)
         placements = list(result.scalars().all())
         if not placements:
-            slot_exists = await self._session.execute(select(AdSlot.code).where(AdSlot.code == slot_code))
+            slot_exists = await self._session.execute(
+                select(AdSlot.code).where(AdSlot.code == slot_code)
+            )
             if slot_exists.scalar_one_or_none() is None:
                 raise AdSlotNotFoundError("广告位不存在。")
         return placements
@@ -315,8 +317,12 @@ class AdvertisementService:
             .where(AdPlacement.slot_code == payload.slot_code)
             .order_by(AdPlacement.sort_order, AdPlacement.placement_id)
         )
-        placement_map = {placement.creative_id: placement for placement in placements.scalars().all()}
-        missing = [creative_id for creative_id in payload.creative_ids if creative_id not in placement_map]
+        placement_map = {
+            placement.creative_id: placement for placement in placements.scalars().all()
+        }
+        missing = [
+            creative_id for creative_id in payload.creative_ids if creative_id not in placement_map
+        ]
         if missing:
             raise AdPlacementNotFoundError("部分素材未投放至该广告位, 无法排序。")
 

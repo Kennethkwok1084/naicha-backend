@@ -15,7 +15,7 @@ async def _seed_product(session, *, stock: int) -> None:
     category = Category(category_id=901, name="并发测试奶茶", sort_order=1)
     session.add(category)
     await session.flush()
-    
+
     product = Product(
         product_id=901,
         category_id=category.category_id,
@@ -27,10 +27,10 @@ async def _seed_product(session, *, stock: int) -> None:
         stock_quantity=stock,
     )
     session.add(product)
-    
+
     group = SpecGroup(group_id=901, name="规格", sort_order=1)
     session.add(group)
-    
+
     option = SpecOption(
         option_id=901,
         group_id=group.group_id,
@@ -41,7 +41,7 @@ async def _seed_product(session, *, stock: int) -> None:
     )
     session.add(option)
     await session.flush()
-    
+
     mapping = ProductSpecMapping(
         mapping_id=901,
         product_id=product.product_id,

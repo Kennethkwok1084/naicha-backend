@@ -45,8 +45,55 @@ from app.models.catalog import (
 from app.models.orders import Order, OrderItem, PaymentRecord
 from app.models.reservations import ReservationSlot
 from app.models.shop import ShopConfig, ShopProfile, ShopSetting
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+
+async def sync_sequences(session_factory) -> None:
+    """同步所有主键序列，避免手动指定ID后序列不更新导致的主键冲突"""
+    async with session_factory() as session:
+        print("🔧 同步数据库序列...")
+        
+        tables = [
+            ("orders", "orders_order_id_seq", "order_id"),
+            ("order_items", "order_items_item_id_seq", "item_id"),
+            ("payment_records", "payment_records_pay_id_seq", "pay_id"),
+            ("audit_logs", "audit_logs_audit_id_seq", "audit_id"),
+            ("print_jobs", "print_jobs_job_id_seq", "job_id"),
+            ("want_events", "want_events_id_seq", "id"),
+            ("users", "users_user_id_seq", "user_id"),
+            ("user_addresses", "user_addresses_address_id_seq", "address_id"),
+            ("admins", "admins_admin_id_seq", "admin_id"),
+            ("categories", "categories_category_id_seq", "category_id"),
+            ("products", "products_product_id_seq", "product_id"),
+            ("spec_groups", "spec_groups_group_id_seq", "group_id"),
+            ("spec_options", "spec_options_option_id_seq", "option_id"),
+            ("coupons", "coupons_coupon_id_seq", "coupon_id"),
+            ("loyalty_transactions", "loyalty_transactions_transaction_id_seq", "transaction_id"),
+            ("reservation_slots", "reservation_slots_slot_id_seq", "slot_id"),
+            ("ad_slots", "ad_slots_slot_id_seq", "slot_id"),
+            ("ad_creatives", "ad_creatives_creative_id_seq", "creative_id"),
+            ("ad_placements", "ad_placements_placement_id_seq", "placement_id"),
+        ]
+        
+        for table_name, seq_name, pk_col in tables:
+            try:
+                # 获取最大ID
+                result = await session.execute(
+                    text(f"SELECT COALESCE(MAX({pk_col}), 0) as max_id FROM {table_name}")
+                )
+                max_id = result.scalar()
+                
+                # 同步序列
+                if max_id > 0:
+                    await session.execute(text(f"SELECT setval('{seq_name}', {max_id}, true)"))
+                    print(f"  ✓ {table_name:25} 序列已同步至 {max_id}")
+            except Exception as e:
+                # 某些表可能不存在或没有序列，跳过
+                pass
+        
+        await session.commit()
+        print()
 
 
 async def clean_database(session_factory) -> None:
@@ -1479,6 +1526,9 @@ async def main() -> None:
         await seed_ad_slots(session_factory)
         await seed_ad_creatives(session_factory)
         await seed_ad_placements(session_factory)
+        
+        # 同步所有主键序列（避免后续插入时主键冲突）
+        await sync_sequences(session_factory)
         
         print("=" * 70)
         print("✅ 所有测试数据创建完成！")

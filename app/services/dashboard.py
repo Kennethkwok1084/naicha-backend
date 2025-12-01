@@ -87,7 +87,9 @@ class DashboardService:
                 "payment_channel_split": channel_split,
             }
             if compare:
-                previous_start, previous_end = self._calculate_comparison_window(range_key, start, end)
+                previous_start, previous_end = self._calculate_comparison_window(
+                    range_key, start, end
+                )
                 compare_summary = await self._fetch_summary(previous_start, previous_end)
                 payload["compare_summary"] = compare_summary
 
@@ -104,9 +106,7 @@ class DashboardService:
             func.coalesce(func.sum(Order.total_price), 0),
             func.coalesce(func.avg(Order.total_price), 0),
             func.coalesce(
-                func.sum(
-                    case((Order.status == "refunded", Order.total_price), else_=0)
-                ),
+                func.sum(case((Order.status == "refunded", Order.total_price), else_=0)),
                 0,
             ),
         ).where(
@@ -144,9 +144,7 @@ class DashboardService:
             lambda: {"gross_sales": 0.0, "order_count": 0}
         )
 
-        bucket_size = (
-            timedelta(hours=1) if range_key == "day" else timedelta(days=1)
-        )
+        bucket_size = timedelta(hours=1) if range_key == "day" else timedelta(days=1)
 
         for updated_at, total_price in rows:
             ts = self._normalize_timestamp(updated_at, bucket_size)
@@ -187,7 +185,10 @@ class DashboardService:
                 Order.updated_at < end,
             )
             .group_by(OrderItem.product_id, OrderItem.product_name)
-            .order_by(func.sum(OrderItem.quantity).desc(), func.sum(OrderItem.quantity * OrderItem.unit_price).desc())
+            .order_by(
+                func.sum(OrderItem.quantity).desc(),
+                func.sum(OrderItem.quantity * OrderItem.unit_price).desc(),
+            )
             .limit(self.TOP_PRODUCT_LIMIT)
         )
 

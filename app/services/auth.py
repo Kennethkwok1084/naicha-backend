@@ -71,4 +71,5 @@ class AuthService:
         return user
 
     def issue_access_token(self, subject: str, scope: TokenScope) -> str:
-        return create_access_token(subject=subject, scope=scope)
+        # 强制生成jti，确保所有token可被黑名单跟踪/踢下线
+        return create_access_token(subject=subject, scope=scope, include_jti=True)

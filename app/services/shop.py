@@ -5,13 +5,13 @@ from datetime import datetime
 from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from redis.asyncio import Redis, from_url
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
-from zoneinfo import ZoneInfo
 
 from app.core.settings import Settings
 from app.models.shop import ShopProfile, ShopSetting
@@ -68,7 +68,7 @@ class ShopService:
     async def _merge_settings_to_snapshot(self, snapshot: dict[str, Any]) -> None:
         """从数据库读取 shop_settings 并合并到快照中"""
         settings_dict = await self._get_shop_settings_dict()
-        
+
         # 如果快照中没有这些字段，才从数据库读取（快照优先）
         if "min_delivery_amount" not in snapshot:
             snapshot["min_delivery_amount"] = settings_dict.get("min_delivery_amount")
@@ -146,9 +146,7 @@ class ShopService:
 
         # 生成今日营业时间文案
         business_hours_today = self._get_business_hours_today(
-            profile.is_open,
-            profile.open_hours_json,
-            profile.timezone
+            profile.is_open, profile.open_hours_json, profile.timezone
         )
 
         return {
@@ -166,20 +164,17 @@ class ShopService:
         }
 
     def _get_business_hours_today(
-        self,
-        is_open: bool,
-        open_hours_json: dict | None,
-        timezone_str: str
+        self, is_open: bool, open_hours_json: dict | None, timezone_str: str
     ) -> str | None:
         """生成今日营业时间可读文案"""
         if not open_hours_json:
             return "营业中" if is_open else "休息中"
-        
+
         try:
             tz = ZoneInfo(timezone_str)
             now = datetime.now(tz)
             weekday = now.isoweekday()  # 1=周一, 7=周日
-            
+
             # 查找今日营业时间
             for day_config in open_hours_json:
                 if day_config.get("weekday") == weekday:
@@ -193,7 +188,7 @@ class ShopService:
                                 return f"营业中 {start}-{end}"
                             else:
                                 return f"休息中 (营业时间 {start}-{end})"
-            
+
             return "营业中" if is_open else "休息中"
         except Exception:
             # 解析失败时返回简单状态
@@ -220,9 +215,6 @@ class ShopService:
         radius = 6371000.0
         dlat = radians(lat2 - lat1)
         dlng = radians(lng2 - lng1)
-        a = (
-            sin(dlat / 2) ** 2
-            + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
-        )
+        a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
         c = 2 * atan2(sqrt(a), sqrt(1 - a))
         return radius * c

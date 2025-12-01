@@ -6,6 +6,111 @@
 
 ## 最新变更
 
+### 微信小程序登录
+- **状态**：新增（日期：2025-11-29）
+- **路径/方法**：`POST /api/v1/users/login`
+- **权限**：公开
+- **幂等要求**：是（基于微信code的SHA256哈希防重放）
+- **限流**：10次/分钟/IP
+- **请求头**：无特殊要求
+- **请求体**：
+```json
+{
+  "code": "061abc7d0f2abc3d0f2abc3d0f2abc3d",
+  "nickname": "用户昵称",
+  "avatar_url": "https://thirdwx.qlogo.cn/..."
+}
+```
+- **字段说明**：
+  - `code`: 微信登录一次性code（必填）
+  - `nickname`: 用户昵称（可选，长度≤100，自动HTML转义和限长50）
+  - `avatar_url`: 用户头像URL（可选，长度≤500，必须http/https）
+- **响应体**：
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "user_id": 12345,
+  "is_new_user": true,
+  "token_type": "bearer",
+  "expires_in": 7200
+}
+```
+- **字段说明**：
+  - `access_token`: 访问令牌，有效期2小时（默认）
+  - `refresh_token`: 刷新令牌，有效期30天（默认）
+  - `user_id`: 用户ID
+  - `is_new_user`: 是否新注册用户
+  - `token_type`: 固定值"bearer"
+  - `expires_in`: access_token过期时间（秒）
+- **错误码**：
+  - 400 Bad Request - code已使用或无效
+  - 429 Too Many Requests - 超过限流阈值
+  - 500 Internal Server Error - 微信API调用失败
+- **副作用**：
+  1. 调用微信jscode2session获取openid/unionid/session_key
+  2. code哈希存入`wechat_used_codes`表防重放
+  3. 根据openid查询或创建用户记录
+  4. 更新用户昵称/头像/unionid（如提供）
+  5. 生成JWT token（包含user_id、openid、jti）
+- **token结构**：
+  - `sub`: 用户ID
+  - `scope`: "user"
+  - `openid`: 微信openid
+  - `jti`: JWT ID（用于黑名单踢下线）
+  - `exp`: 过期时间戳
+- **安全要求**：
+  - WECHAT_APPID/WECHAT_SECRET仅走环境变量
+  - session_key不记录日志、不返回前端
+  - code仅使用一次，SHA256哈希后存储
+  - IP级别限流10次/分钟
+
+### 绑定微信手机号
+- **状态**：新增（日期：2025-11-29）
+- **路径/方法**：`POST /api/v1/users/phone/bind`
+- **权限**：需要Bearer token认证
+- **幂等要求**：是（基于微信code的SHA256哈希防重放）
+- **限流**：5次/分钟/IP
+- **请求头**：
+  - `Authorization`: Bearer {access_token}（必填）
+- **请求体**：
+```json
+{
+  "code": "061abc7d0f2abc3d0f2abc3d0f2abc3d",
+  "guest_session_id": "guest_abc123"
+}
+```
+- **字段说明**：
+  - `code`: 微信手机号一次性code（必填）
+  - `guest_session_id`: 游客会话ID（可选，用于追踪转化来源）
+- **响应体**：
+```json
+{
+  "phone": "138****5678",
+  "from_guest_session": false,
+  "message": "手机号绑定成功"
+}
+```
+- **字段说明**：
+  - `phone`: 脱敏后的手机号
+  - `from_guest_session`: 是否从游客会话转换
+  - `message`: 结果消息
+- **错误码**：
+  - 400 Bad Request - code已使用或无效
+  - 401 Unauthorized - 未登录或token无效
+  - 429 Too Many Requests - 超过限流阈值
+  - 500 Internal Server Error - 微信API调用失败
+- **副作用**：
+  1. 验证当前用户token有效性
+  2. 调用微信API获取手机号（需access_token）
+  3. code哈希存入`wechat_used_codes`表防重放
+  4. 更新用户手机号字段
+- **安全要求**：
+  - 必须登录状态
+  - 手机号明文仅在日志中脱敏显示
+  - code仅使用一次
+  - IP级别限流5次/分钟
+
 ### 批量上报用户行为埋点
 - **状态**：新增 （日期：2025-11-23）
 - **路径/方法**：`POST /api/v1/analytics/events`
@@ -1248,7 +1353,8 @@
   - `items[].selected_specs`：规格选择，至少提供 `option_id`，其余字段用于透传文案。
 - **响应字段补充**：
   - `eta_minutes` / `eta_text`：下单时的预计等待/送达时间。
-  - `pickup_code`：取餐码（自取/前台核验展示）。
+  - `pickup_code`：取餐码（支付成功后生成，未支付为 `null`，可配置前缀/长度）。
+  - 取餐码格式配置：`shop_settings` 表中的 `pickup_code_prefix` / `pickup_code_digits` 优先，其次读取 `.env` 中的 `PICKUP_CODE_PREFIX` / `PICKUP_CODE_DIGITS`，总长度不超过 20。
 - **响应体**：
 ```json
 {
@@ -1263,7 +1369,7 @@
   "reminder_sent_at": null,
   "eta_minutes": 15,
   "eta_text": "预计 15 分钟后可取餐",
-  "pickup_code": "1234",
+  "pickup_code": null,
   "items": [
     {
       "item_id": 1,
@@ -1294,6 +1400,7 @@
   - [x] 预约容量/营业时间校验
   - [ ] 性能阈值（P95 < 50ms）
 - **变更历史**：
+  - 2025-11-30：取餐码改为支付成功后生成，支持自定义前缀/位数
   - 2025-11-24：请求体统一（shop_id/delivery_type/user_phone/selected_specs），备注长度收紧
   - 2025-11-08：新增 ETA 与取餐码字段
   - 2025-10-17：首次发布
@@ -1310,10 +1417,18 @@
 - **状态**：新增 （日期：2025-11-08）
 - **路径/方法**：`GET /api/v1/me/orders`
 - **权限**：用户 JWT
-- **查询参数**：`limit`（默认20，1-100）、`offset`（默认0，>=0）
+- **查询参数**：
+  - `limit`（默认20，1-100）
+  - `offset`（默认0，>=0）
+  - `status`（可选，字符串，多个状态用逗号分隔）允许值：`pending_payment`, `paid`, `in_production`, `ready_for_pickup`, `completed`, `cancelled`, `refund_pending`, `refunded`
 - **响应体**：`OrderResponseSchema` 列表（含 ETA、取餐码）
-- **错误码**：401 未登录
+- **错误码**：
+  - 400 Invalid status values —— 传入的状态值不合法
+  - 401 未登录
 - **副作用**：无
+- **示例**：
+  - `GET /api/v1/me/orders?status=pending_payment` —— 仅返回待支付订单
+  - `GET /api/v1/me/orders?status=paid,in_production` —— 返回已支付和制作中的订单
 
 ### 地址簿管理
 - **状态**：新增 （日期：2025-11-08）
@@ -1451,6 +1566,53 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-17：首次发布
+
+### 取消订单
+- **状态**：新增 （日期：2025-11-29）
+- **路径/方法**：`POST /api/v1/orders/{order_id}/cancel`
+- **权限**：用户 JWT | 游客（需匹配 `guest_session_id`）
+- **幂等要求**：是（重复取消已取消订单返回 409）
+- **限流**：应用内 SlowAPI `100 req/min`
+- **查询参数**：
+  - `guest_session_id`（可选，字符串）用于游客身份校验
+- **请求体**：无
+- **响应体**：`OrderResponseSchema`（含更新后的订单状态）
+```json
+{
+  "order_id": 9001,
+  "order_number": "20251129123045-NA1234",
+  "status": "cancelled",
+  "order_type": "pickup",
+  "total_price": 26.0,
+  "created_at": "2025-11-29T12:30:45Z",
+  "is_scheduled": false,
+  "scheduled_at": null,
+  "eta_minutes": null,
+  "eta_text": "订单已取消",
+  "pickup_code": null,
+  "items": [...]
+}
+```
+- **错误码**：
+  - 403 订单不属于当前用户 / 游客会话不匹配
+  - 404 订单不存在
+  - 409 订单状态非 `pending_payment` 或已支付，无法取消
+- **副作用**：
+  - 订单状态更新为 `cancelled`
+  - 归还库存（`inventory.available_stock` 增加）
+  - 释放预约时段（若有 `reservation_slot_id`）
+  - 写入审计日志（`actor_type=user|guest`, `action=order.user_cancel`）
+- **审计记录**：记录取消操作及库存归还详情
+- **观测指标**：可复用现有订单指标
+- **测试清单**：
+  - [x] 正常流（用户取消待支付订单）
+  - [x] 权限校验（跨用户 403、游客 session 不匹配 403）
+  - [x] 状态校验（已支付订单返回 409）
+  - [x] 库存归还正确
+  - [x] 预约时段释放
+  - [x] 幂等性（重复取消返回 409）
+- **变更历史**：
+  - 2025-11-29：首次发布
 
 ### 微信支付回调
 - **状态**：新增 （日期：2025-10-17）

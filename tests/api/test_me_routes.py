@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.api.routes.me import list_addresses
@@ -215,7 +215,7 @@ async def test_my_orders_and_stamps(db_session) -> None:
         payment_status="paid",
         source="user",
         is_scheduled=False,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         pickup_code="123456",
     )
     item = OrderItem(
@@ -240,10 +240,132 @@ async def test_my_orders_and_stamps(db_session) -> None:
             )
             assert orders_resp.status_code == 200
             assert len(orders_resp.json()) >= 1
-            stamps_resp = await client.get(
-                "/api/v1/me/stamps", headers=_auth_header(user.user_id)
-            )
+            stamps_resp = await client.get("/api/v1/me/stamps", headers=_auth_header(user.user_id))
             assert stamps_resp.status_code == 200
             assert stamps_resp.json()["total_completed_orders"] >= 0
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_list_orders_with_status_filter(db_session) -> None:
+    """测试订单状态筛选功能"""
+    user = User(user_id=701, open_id="openid-status-filter")
+    db_session.add(user)
+    await db_session.flush()
+
+    # 创建不同状态的订单
+    order_pending = Order(
+        order_id=9101,
+        order_number="TEST-PENDING-1",
+        user_id=user.user_id,
+        total_price=10,
+        status="pending_payment",
+        order_type="pickup",
+        payment_status="pending",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(UTC),
+        pickup_code="123456",
+    )
+    order_paid = Order(
+        order_id=9102,
+        order_number="TEST-PAID-1",
+        user_id=user.user_id,
+        total_price=20,
+        status="paid",
+        order_type="pickup",
+        payment_status="paid",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(UTC),
+        pickup_code="123457",
+    )
+    order_cancelled = Order(
+        order_id=9103,
+        order_number="TEST-CANCELLED-1",
+        user_id=user.user_id,
+        total_price=30,
+        status="cancelled",
+        order_type="pickup",
+        payment_status="pending",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(UTC),
+        pickup_code="123458",
+    )
+
+    item1 = OrderItem(
+        item_id=101,
+        order_id=order_pending.order_id,
+        product_id=1,
+        product_name="测试饮品1",
+        quantity=1,
+        unit_price=10,
+        selected_specs_json=[],
+    )
+    item2 = OrderItem(
+        item_id=102,
+        order_id=order_paid.order_id,
+        product_id=1,
+        product_name="测试饮品2",
+        quantity=1,
+        unit_price=20,
+        selected_specs_json=[],
+    )
+    item3 = OrderItem(
+        item_id=103,
+        order_id=order_cancelled.order_id,
+        product_id=1,
+        product_name="测试饮品3",
+        quantity=1,
+        unit_price=30,
+        selected_specs_json=[],
+    )
+
+    db_session.add_all([order_pending, order_paid, order_cancelled, item1, item2, item3])
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 测试单个状态筛选
+            response = await client.get(
+                "/api/v1/me/orders?status=pending_payment",
+                headers=_auth_header(user.user_id),
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["status"] == "pending_payment"
+
+            # 测试多个状态筛选
+            response = await client.get(
+                "/api/v1/me/orders?status=paid,cancelled",
+                headers=_auth_header(user.user_id),
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 2
+            statuses = {order["status"] for order in data}
+            assert statuses == {"paid", "cancelled"}
+
+            # 测试无效状态
+            response = await client.get(
+                "/api/v1/me/orders?status=invalid_status",
+                headers=_auth_header(user.user_id),
+            )
+            assert response.status_code == 400
+            assert "Invalid status values" in response.json()["detail"]
+
+            # 测试空状态列表(应返回所有订单，相当于不筛选)
+            response = await client.get(
+                "/api/v1/me/orders?status=",
+                headers=_auth_header(user.user_id),
+            )
+            assert response.status_code == 200
+            assert len(response.json()) == 3  # 所有订单
+
     finally:
         app.dependency_overrides.pop(get_async_session, None)

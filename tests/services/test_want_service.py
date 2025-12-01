@@ -43,7 +43,9 @@ async def test_record_want_success_user(db_session) -> None:
     settings = get_settings()
     service = WantService(db_session, settings)
 
-    event = await service.record_want(product_id=product.product_id, user=user, ip=None, user_agent="pytest")
+    event = await service.record_want(
+        product_id=product.product_id, user=user, ip=None, user_agent="pytest"
+    )
     assert isinstance(event, WantEvent)
     assert event.product_id == product.product_id
     assert event.user_id == user.user_id
@@ -59,14 +61,24 @@ async def test_record_want_rate_limit_per_user(db_session) -> None:
     service = WantService(db_session, get_settings())
     now = datetime.now(tz=UTC)
 
-    await service.record_want(product_id=product.product_id, user=user, ip=None, user_agent=None, now=now)
+    await service.record_want(
+        product_id=product.product_id, user=user, ip=None, user_agent=None, now=now
+    )
 
     with pytest.raises(WantRateLimitError):
-        await service.record_want(product_id=product.product_id, user=user, ip=None, user_agent=None, now=now + timedelta(seconds=10))
+        await service.record_want(
+            product_id=product.product_id,
+            user=user,
+            ip=None,
+            user_agent=None,
+            now=now + timedelta(seconds=10),
+        )
 
     # After one minute succeeds
     later = now + timedelta(minutes=1, seconds=1)
-    event = await service.record_want(product_id=product.product_id, user=user, ip=None, user_agent=None, now=later)
+    event = await service.record_want(
+        product_id=product.product_id, user=user, ip=None, user_agent=None, now=later
+    )
     assert event.product_id == product.product_id
 
 
@@ -76,10 +88,18 @@ async def test_record_want_rate_limit_per_ip(db_session) -> None:
     service = WantService(db_session, get_settings())
     now = datetime.now(tz=UTC)
 
-    await service.record_want(product_id=product.product_id, user=None, ip="1.1.1.1", user_agent="pytest", now=now)
+    await service.record_want(
+        product_id=product.product_id, user=None, ip="1.1.1.1", user_agent="pytest", now=now
+    )
 
     with pytest.raises(WantRateLimitError):
-        await service.record_want(product_id=product.product_id, user=None, ip="1.1.1.1", user_agent="pytest", now=now + timedelta(seconds=20))
+        await service.record_want(
+            product_id=product.product_id,
+            user=None,
+            ip="1.1.1.1",
+            user_agent="pytest",
+            now=now + timedelta(seconds=20),
+        )
 
 
 @pytest.mark.asyncio
@@ -91,7 +111,9 @@ async def test_record_want_disabled_flag(db_session) -> None:
     try:
         service = WantService(db_session, settings)
         with pytest.raises(WantFeatureDisabledError):
-            await service.record_want(product_id=product.product_id, user=None, ip="1.1.1.1", user_agent=None)
+            await service.record_want(
+                product_id=product.product_id, user=None, ip="1.1.1.1", user_agent=None
+            )
     finally:
         settings.want_enabled = original
 
@@ -120,7 +142,9 @@ async def test_get_stats_returns_top_and_series(db_session) -> None:
             now=base_time + timedelta(days=offset),
         )
 
-    stats = await service.get_stats(range_key="7d", limit=5, reference=base_time + timedelta(days=2))
+    stats = await service.get_stats(
+        range_key="7d", limit=5, reference=base_time + timedelta(days=2)
+    )
     assert stats["top_products"][0]["product_id"] == product.product_id
     assert stats["top_products"][0]["total"] == 3
     assert len(stats["daily_series"]) >= 3

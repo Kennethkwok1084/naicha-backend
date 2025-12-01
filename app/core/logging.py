@@ -14,13 +14,13 @@ def configure_logging(settings: Settings) -> None:
     logging_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
     handlers = [logging.StreamHandler(sys.stdout)]
-    
+
     # 如果配置了日志文件,添加文件处理器
     if settings.log_file:
         log_dir = Path(settings.log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / settings.log_file
-        
+
         file_handler = RotatingFileHandler(
             log_path,
             maxBytes=50 * 1024 * 1024,  # 50MB

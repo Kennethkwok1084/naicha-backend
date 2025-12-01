@@ -21,7 +21,6 @@ def upgrade() -> None:
         ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
         """
     )
-    op.execute("ALTER TABLE orders ALTER COLUMN version DROP DEFAULT;")
 
 
 def downgrade() -> None:

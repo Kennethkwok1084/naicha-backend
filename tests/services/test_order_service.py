@@ -50,7 +50,9 @@ async def _seed_menu(db_session):
         inventory_status="in_stock",
         sort_order=1,
     )
-    mapping = ProductSpecMapping(mapping_id=1, product_id=product.product_id, group_id=group.group_id)
+    mapping = ProductSpecMapping(
+        mapping_id=1, product_id=product.product_id, group_id=group.group_id
+    )
 
     db_session.add_all([category, product, group, option, mapping])
     await db_session.flush()
@@ -266,7 +268,12 @@ async def test_create_reservation_order_success(db_session) -> None:
     profile = ShopProfile(
         id=1,
         timezone="Asia/Shanghai",
-        open_hours_json=[{"weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(), "ranges": [["08:00", "22:00"]]}],
+        open_hours_json=[
+            {
+                "weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(),
+                "ranges": [["08:00", "22:00"]],
+            }
+        ],
     )
     db_session.add(profile)
     await db_session.flush()

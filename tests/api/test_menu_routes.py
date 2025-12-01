@@ -41,9 +41,7 @@ async def _prepare_basic_menu(db_session) -> Product:
     )
     product_spec = ProductSpecMapping(mapping_id=1, product_id=1, group_id=1)
 
-    db_session.add_all(
-        [category, product, mapping, spec_group, spec_option, product_spec]
-    )
+    db_session.add_all([category, product, mapping, spec_group, spec_option, product_spec])
     await db_session.flush()
     return product
 

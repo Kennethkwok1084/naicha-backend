@@ -58,13 +58,17 @@ async def test_award_on_payment_accumulates_cups(db_session) -> None:
     assert stored_user.loyalty_points == 3
 
     transactions = (
-        await db_session.execute(
-            select(LoyaltyTransaction).where(
-                LoyaltyTransaction.user_id == user.user_id,
-                LoyaltyTransaction.order_id == order.order_id,
+        (
+            await db_session.execute(
+                select(LoyaltyTransaction).where(
+                    LoyaltyTransaction.user_id == user.user_id,
+                    LoyaltyTransaction.order_id == order.order_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(transactions) == 1
     assert transactions[0].delta_points == 3
 
@@ -107,18 +111,24 @@ async def test_award_on_payment_triggers_coupon_when_threshold_reached(db_sessio
     assert refreshed_user.loyalty_points == 1
 
     coupons = (
-        await db_session.execute(select(Coupon).where(Coupon.user_id == user.user_id))
-    ).scalars().all()
+        (await db_session.execute(select(Coupon).where(Coupon.user_id == user.user_id)))
+        .scalars()
+        .all()
+    )
     assert len(coupons) == 1
     assert coupons[0].type == "free_any_drink"
 
     transactions = (
-        await db_session.execute(
-            select(LoyaltyTransaction)
-            .where(LoyaltyTransaction.user_id == user.user_id)
-            .order_by(LoyaltyTransaction.id.asc())
+        (
+            await db_session.execute(
+                select(LoyaltyTransaction)
+                .where(LoyaltyTransaction.user_id == user.user_id)
+                .order_by(LoyaltyTransaction.id.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(transactions) == 2
     assert transactions[0].delta_points == 2
     assert transactions[1].delta_points == -10

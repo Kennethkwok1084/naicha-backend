@@ -48,7 +48,9 @@ async def _seed_menu(db_session) -> tuple[Product, SpecOption]:
         inventory_status="in_stock",
         sort_order=1,
     )
-    product_spec = ProductSpecMapping(mapping_id=3001, product_id=product.product_id, group_id=spec_group.group_id)
+    product_spec = ProductSpecMapping(
+        mapping_id=3001, product_id=product.product_id, group_id=spec_group.group_id
+    )
 
     db_session.add_all([category, product, mapping, spec_group, spec_option, product_spec])
     await db_session.flush()
