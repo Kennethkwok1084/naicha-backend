@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 
 from sqlalchemy import Select, case, func, select
@@ -62,34 +62,61 @@ class DashboardService:
 
     async def get_dashboard(
         self,
-        range_key: DashboardRange,
+        range_key: DashboardRange | None = None,
         *,
         compare: bool = False,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        top_n: int = 10,
     ) -> dict[str, Any]:
-        self._ensure_valid_range(range_key)
-        cache_key = f"{range_key}:{int(compare)}"
+        # 参数验证：必须提供 range_key 或 (start_date + end_date)
+        if range_key is None and (start_date is None or end_date is None):
+            raise ValueError("Either range_key or both start_date and end_date must be provided")
+        
+        if range_key is not None:
+            self._ensure_valid_range(range_key)
+        
+        # 构建缓存键（包含所有参数）
+        if start_date and end_date:
+            cache_key = f"custom:{start_date.date()}:{end_date.date()}:{int(compare)}:{top_n}"
+            start = start_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
+            end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=UTC)
+            effective_range = "custom"
+        else:
+            cache_key = f"{range_key}:{int(compare)}:{top_n}"
+            start, end = self._calculate_window(range_key)
+            effective_range = range_key
 
         cached = await _cache.get(cache_key)
         if cached:
             return cached
 
-        start, end = self._calculate_window(range_key)
-        with DASHBOARD_QUERY_LATENCY_MS.labels(range_key).time():
+        with DASHBOARD_QUERY_LATENCY_MS.labels(effective_range).time():
             summary = await self._fetch_summary(start, end)
-            trend = await self._fetch_trend(range_key, start, end)
-            top_products = await self._fetch_top_products(start, end)
+            trend = await self._fetch_trend(range_key or "day", start, end)
+            top_products = await self._fetch_top_products(start, end, limit=top_n)
             channel_split = await self._fetch_payment_channel_split(start, end)
             payload: dict[str, Any] = {
-                "range": range_key,
+                "range": effective_range,
+                "start_date": start.date().isoformat(),
+                "end_date": end.date().isoformat(),
                 "summary": summary,
                 "trend": trend,
                 "top_products": top_products,
                 "payment_channel_split": channel_split,
             }
             if compare:
-                previous_start, previous_end = self._calculate_comparison_window(
-                    range_key, start, end
-                )
+                if range_key:
+                    previous_start, previous_end = self._calculate_comparison_window(
+                        range_key, start, end
+                    )
+                else:
+                    # 自定义日期的对比：向前推移相同天数
+                    days_diff = (end.date() - start.date()).days + 1
+                    previous_end = start - timedelta(seconds=1)
+                    previous_start = previous_end - timedelta(days=days_diff)
+                    previous_start = previous_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                
                 compare_summary = await self._fetch_summary(previous_start, previous_end)
                 payload["compare_summary"] = compare_summary
 
@@ -167,6 +194,7 @@ class DashboardService:
         self,
         start: datetime,
         end: datetime,
+        limit: int = 10,
     ) -> list[dict[str, Any]]:
         stmt = (
             select(
@@ -189,7 +217,7 @@ class DashboardService:
                 func.sum(OrderItem.quantity).desc(),
                 func.sum(OrderItem.quantity * OrderItem.unit_price).desc(),
             )
-            .limit(self.TOP_PRODUCT_LIMIT)
+            .limit(limit)
         )
 
         result = await self._session.execute(stmt)

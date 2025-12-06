@@ -28,3 +28,20 @@ class UserSummarySchema(BaseModel):
 
 class UserLoginResponseSchema(TokenSchema):
     user: UserSummarySchema
+
+
+class AdminInfoSchema(BaseModel):
+    """管理员信息"""
+
+    id: str
+    username: str
+    role: str
+    permissions: list[str]
+
+
+class AdminLoginResponseSchema(BaseModel):
+    """管理员登录响应"""
+
+    access_token: str
+    token_type: str = "bearer"
+    admin: AdminInfoSchema

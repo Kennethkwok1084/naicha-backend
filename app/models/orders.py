@@ -17,7 +17,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import BIGINT_PK, Base, CreatedAtMixin, TimestampMixin
 
@@ -62,6 +62,13 @@ class Order(Base, TimestampMixin):
         Integer,
         nullable=False,
         server_default=text("0"),
+    )
+
+    # Relationships
+    items: Mapped[list["OrderItem"]] = relationship(
+        "OrderItem", 
+        back_populates="order",
+        cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -113,6 +120,9 @@ class OrderItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     selected_specs_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Relationships
+    order: Mapped["Order"] = relationship("Order", back_populates="items")
 
     __table_args__ = (CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),)
 

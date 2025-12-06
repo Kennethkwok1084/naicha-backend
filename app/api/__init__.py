@@ -22,7 +22,7 @@ from app.api.routes import (
 api_router = APIRouter()
 api_router.include_router(system.router)
 api_router.include_router(config.router)
-api_router.include_router(admin.router)
+api_router.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 api_router.include_router(advertisements.router)
 api_router.include_router(analytics.router)
 api_router.include_router(wechat_auth.router)

@@ -55,11 +55,11 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 
     content = _build_error_payload(
         message,
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
         extra={"details": errors},
     )
     content["detail"] = message
-    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=content)
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=content)
 
 
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:

@@ -140,9 +140,8 @@ class Coupon(Base, CreatedAtMixin):
         server_default=func.now(),
     )
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    used_in_order_id: Mapped[int | None] = mapped_column(
-        ForeignKey("orders.order_id"), nullable=True
-    )
+    # 不使用 FK 以避免与 orders.coupon_id 形成循环依赖
+    used_in_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         CheckConstraint("type IN ('free_any_drink')", name="ck_coupons_type"),

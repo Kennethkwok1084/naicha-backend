@@ -161,7 +161,7 @@ async def get_coupons(
     current_user: User = Depends(get_current_user),
     service: LoyaltyService = Depends(get_loyalty_service),
     status: str | None = Query(
-        default=None, regex="^(active|used|expired|void)$", description="筛选状态"
+        default=None, pattern="^(active|used|expired|void)$", description="筛选状态"
     ),
 ) -> CouponsResponseSchema:
     """获取当前用户的优惠券列表"""

@@ -54,7 +54,7 @@ class TestWeChatAuthAPI:
             json={},
         )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_login_code_reused(self, async_client: AsyncClient):
         """测试code重复使用"""

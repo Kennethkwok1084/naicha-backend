@@ -269,3 +269,140 @@ class OpsAutoCancelResponseSchema(BaseModel):
     cutoff_iso: datetime
     source: Literal["http", "celery", "cron"]
     operator_admin_id: int
+
+
+# ============ Admin 订单管理 Schema ============
+
+
+class AdminOrderListQuerySchema(BaseModel):
+    """订单列表查询参数"""
+
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+    status: list[str] | None = Field(default=None, description="订单状态筛选（多选）")
+    payment_status: list[str] | None = Field(default=None, description="支付状态筛选（多选）")
+    order_type: str | None = Field(default=None, description="订单类型筛选")
+    payment_channel: str | None = Field(default=None, description="支付渠道筛选")
+    start_time: datetime | None = Field(default=None, description="开始时间")
+    end_time: datetime | None = Field(default=None, description="结束时间")
+    user_phone: str | None = Field(default=None, max_length=30, description="用户手机号")
+    order_number: str | None = Field(default=None, max_length=50, description="订单号")
+    pickup_code: str | None = Field(default=None, max_length=20, description="取餐码")
+
+
+class AdminOrderItemSchema(BaseModel):
+    """订单商品项（管理端）"""
+
+    item_id: int
+    product_id: int | None
+    product_name: str
+    quantity: int
+    unit_price: float
+    selected_specs: list[dict[str, Any]]
+    subtotal: float
+
+
+class AdminOrderDetailSchema(BaseModel):
+    """订单详情（管理端）"""
+
+    order_id: int
+    order_number: str
+    status: str
+    payment_status: str
+    payment_channel: str | None
+    order_type: str
+    source: str | None
+    total_price: float
+    coupon_discount: float
+    points_discount: float
+    final_amount: float
+    user_id: int | None
+    user_phone: str | None
+    user_nickname: str | None
+    pickup_code: str | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+    paid_at: datetime | None
+    completed_at: datetime | None
+    cancelled_at: datetime | None
+    created_by_admin_id: int | None
+    items: list[AdminOrderItemSchema]
+    address: OrderAddressSchema | None = None
+    timeline: list[dict[str, Any]] = Field(default_factory=list, description="状态流转时间线")
+
+
+class AdminOrderListItemSchema(BaseModel):
+    """订单列表项（管理端）"""
+
+    order_id: int
+    order_number: str
+    status: str
+    payment_status: str
+    payment_channel: str | None
+    order_type: str
+    total_price: float
+    user_phone: str | None
+    pickup_code: str | None
+    created_at: datetime
+    paid_at: datetime | None
+
+
+class AdminOrderListResponseSchema(BaseModel):
+    """订单列表响应"""
+
+    items: list[AdminOrderListItemSchema]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class AdminOrderStatusUpdateRequestSchema(BaseModel):
+    """订单状态修改请求"""
+
+    status: Literal["in_production", "ready_for_pickup", "completed", "cancelled"]
+    reason: str | None = Field(default=None, max_length=200, description="状态变更原因（取消时必填）")
+
+    @model_validator(mode="after")
+    def _validate_reason(self) -> AdminOrderStatusUpdateRequestSchema:
+        if self.status == "cancelled" and not self.reason:
+            raise ValueError("取消订单时必须填写原因")
+        return self
+
+
+class AdminOrderRefundRequestSchema(BaseModel):
+    """订单退款请求"""
+
+    refund_type: Literal["online", "offline"] = Field(default="online")
+    amount: float = Field(..., gt=0, description="退款金额")
+    reason: str = Field(..., min_length=1, max_length=200, description="退款原因（必填）")
+
+
+class AdminOrderRefundResponseSchema(BaseModel):
+    """订单退款响应"""
+
+    order_id: int
+    refund_type: str
+    amount: float
+    status: str
+    refund_id: str | None = None
+    message: str
+
+
+class AdminPickupCodeUpdateRequestSchema(BaseModel):
+    """取餐码修改请求"""
+
+    new_pickup_code: str | None = Field(
+        default=None, min_length=4, max_length=20, description="新取餐码（为空则自动生成）"
+    )
+    reason: str = Field(..., min_length=1, max_length=200, description="修改原因（必填）")
+
+
+class AdminPickupCodeUpdateResponseSchema(BaseModel):
+    """取餐码修改响应"""
+
+    order_id: int
+    old_pickup_code: str | None
+    new_pickup_code: str
+    updated_at: datetime

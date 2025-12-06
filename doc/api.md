@@ -274,7 +274,14 @@
 ```json
 {
   "access_token": "jwt-token",
-  "token_type": "bearer"
+  "token_type": "bearer",
+  "admin": {
+    "admin_id": 1,
+    "username": "admin",
+    "nickname": "管理员",
+    "role": "admin",
+    "permissions": ["orders:view", "orders:edit", "orders:refund", ...]
+  }
 }
 ```
 - **错误码**：
@@ -290,6 +297,266 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-10：首次发布
+  - 2025-01-XX：响应增加admin对象和permissions列表
+
+### 管理后台订单列表
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`GET /api/v1/admin/orders`
+- **权限**：管理员（需要 `orders:view` 权限）
+- **幂等要求**：是
+- **限流**：30次/分钟/管理员
+- **请求参数**：
+  - `page`: 页码，默认1，最小1
+  - `page_size`: 每页数量，默认20，范围1-100
+  - `status`: 订单状态，多个用逗号分隔（pending/paid/in_production/ready_for_pickup/completed/cancelled/refunded）
+  - `payment_status`: 支付状态，多个用逗号分隔（pending/paid/refunded）
+  - `order_type`: 订单类型（pos/online）
+  - `payment_channel`: 支付渠道（wechat/alipay/cash）
+  - `start_time`: 开始时间（ISO8601格式）
+  - `end_time`: 结束时间（ISO8601格式）
+  - `user_phone`: 用户手机号（模糊匹配）
+  - `order_number`: 订单号（模糊匹配）
+  - `pickup_code`: 取餐码（模糊匹配）
+- **响应体**：
+```json
+{
+  "items": [
+    {
+      "order_id": 123,
+      "order_number": "ORD20250115123456",
+      "status": "paid",
+      "payment_status": "paid",
+      "payment_channel": "wechat",
+      "order_type": "online",
+      "total_price": 38.50,
+      "user_phone": "138****5678",
+      "pickup_code": "A001",
+      "created_at": "2025-01-15T10:30:00Z",
+      "paid_at": "2025-01-15T10:30:15Z"
+    }
+  ],
+  "total": 156,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 8
+}
+```
+- **错误码**：
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 429 Too Many Requests —— 超限流
+- **副作用**：无
+- **审计记录**：不记录查询操作
+- **观测指标**：待补 `admin_order_list_total`
+- **测试清单**：
+  - [ ] 正常流（各种过滤组合）
+  - [ ] 分页边界测试
+  - [ ] 权限校验
+  - [ ] 限流测试
+
+### 管理后台订单详情
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`GET /api/v1/admin/orders/{order_id}`
+- **权限**：管理员（需要 `orders:view` 权限）
+- **幂等要求**：是
+- **限流**：60次/分钟/管理员
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "order_number": "ORD20250115123456",
+  "status": "paid",
+  "payment_status": "paid",
+  "payment_channel": "wechat",
+  "order_type": "online",
+  "source": "miniapp",
+  "total_price": 38.50,
+  "coupon_discount": 5.00,
+  "points_discount": 0.00,
+  "final_amount": 33.50,
+  "user_id": 456,
+  "user_phone": "13812345678",
+  "user_nickname": "小明",
+  "pickup_code": "A001",
+  "notes": "少糖",
+  "created_at": "2025-01-15T10:30:00Z",
+  "updated_at": "2025-01-15T10:30:15Z",
+  "paid_at": "2025-01-15T10:30:15Z",
+  "completed_at": null,
+  "cancelled_at": null,
+  "created_by_admin_id": null,
+  "items": [
+    {
+      "item_id": 789,
+      "product_id": 10,
+      "product_name": "招牌奶茶",
+      "quantity": 2,
+      "unit_price": 15.00,
+      "selected_specs": ["大杯", "正常糖"],
+      "subtotal": 30.00
+    }
+  ],
+  "address": {
+    "address": "广东省广州市天河区",
+    "detail": "XX街道XX号",
+    "name": "张三",
+    "phone": "13812345678",
+    "lat": 23.123456,
+    "lng": 113.123456
+  },
+  "timeline": [
+    {"status": "created", "time": "2025-01-15T10:30:00Z"},
+    {"status": "paid", "time": "2025-01-15T10:30:15Z"}
+  ]
+}
+```
+- **错误码**：
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+- **副作用**：无
+- **审计记录**：不记录查询操作
+- **观测指标**：待补 `admin_order_detail_total`
+
+### 管理后台修改订单状态
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`PUT /api/v1/admin/orders/{order_id}/status`
+- **权限**：管理员（需要 `orders:edit` 权限）
+- **幂等要求**：是（相同状态重复调用幂等）
+- **限流**：20次/分钟/管理员
+- **请求体**：
+```json
+{
+  "status": "cancelled",
+  "reason": "用户要求取消"
+}
+```
+- **字段说明**：
+  - `status`: 目标状态（in_production/ready_for_pickup/completed/cancelled）
+  - `reason`: 变更原因（取消时必填，最大200字符）
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "status": "cancelled",
+  "updated_at": "2025-01-15T11:00:00Z"
+}
+```
+- **错误码**：
+  - 400 Bad Request —— 状态转换不合法或缺少reason
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+- **副作用**：
+  1. 更新订单状态
+  2. 根据状态更新时间戳（completed_at/cancelled_at）
+  3. 写入审计日志（包含旧状态、新状态、原因）
+- **审计记录**：
+  - action: `order.status.update`
+  - risk_level: `high`（取消时为critical）
+  - 记录before/after状态和reason
+- **观测指标**：待补 `admin_order_status_update_total{status}`
+
+### 管理后台订单退款
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`POST /api/v1/admin/orders/{order_id}/refund`
+- **权限**：管理员（需要 `orders:refund` 权限）
+- **幂等要求**：否（每次调用产生新的退款记录）
+- **限流**：10次/分钟/管理员
+- **请求体**：
+```json
+{
+  "refund_type": "online",
+  "amount": 33.50,
+  "reason": "商品质量问题"
+}
+```
+- **字段说明**：
+  - `refund_type`: 退款类型（online-线上退款/offline-线下退款，必填）
+  - `amount`: 退款金额（必填，不能超过实付金额）
+  - `reason`: 退款原因（必填，最大200字符）
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "refund_type": "online",
+  "amount": 33.50,
+  "status": "processing",
+  "refund_id": null,
+  "message": "退款处理中，请稍后查询结果"
+}
+```
+- **字段说明**：
+  - `status`: 退款状态（success-成功/processing-处理中/failed-失败）
+  - `refund_id`: 退款流水号（offline时立即返回）
+  - `message`: 退款结果描述
+- **错误码**：
+  - 400 Bad Request —— 订单不支持退款或金额超限
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+- **副作用**：
+  1. 更新订单状态为refunded
+  2. 调用支付渠道退款接口（online类型）
+  3. 写入审计日志（记录退款类型、金额、原因）
+- **审计记录**：
+  - action: `order.refund`
+  - risk_level: `critical`
+  - 记录refund_type/amount/reason
+- **观测指标**：待补 `admin_order_refund_total{refund_type,status}`
+- **测试清单**：
+  - [ ] 正常流（online/offline）
+  - [ ] 金额校验（超限、负数）
+  - [ ] 状态校验（未支付、已退款）
+  - [ ] 权限校验
+  - [ ] 审计日志完整性
+
+### 管理后台修改取餐码
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`PUT /api/v1/admin/orders/{order_id}/pickup-code`
+- **权限**：管理员（需要 `orders:edit` 权限）
+- **幂等要求**：是（相同新取餐码重复调用幂等）
+- **限流**：20次/分钟/管理员
+- **请求体**：
+```json
+{
+  "new_pickup_code": "B999",
+  "reason": "取餐码冲突，用户要求更换"
+}
+```
+- **字段说明**：
+  - `new_pickup_code`: 新取餐码（可选，不填则自动生成）
+  - `reason`: 修改原因（必填，最大200字符）
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "old_pickup_code": "A001",
+  "new_pickup_code": "B999",
+  "updated_at": "2025-01-15T11:00:00Z"
+}
+```
+- **错误码**：
+  - 400 Bad Request —— 订单状态不允许修改或取餐码已存在
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+  - 409 Conflict —— 取餐码已被其他订单使用
+- **副作用**：
+  1. 验证新取餐码唯一性（如提供）
+  2. 更新订单取餐码
+  3. 写入审计日志（记录旧码、新码、原因）
+- **审计记录**：
+  - action: `order.pickup_code.update`
+  - risk_level: `high`
+  - 记录old_pickup_code/new_pickup_code/reason
+- **观测指标**：待补 `admin_order_pickup_code_update_total`
+- **测试清单**：
+  - [ ] 正常流（手动指定/自动生成）
+  - [ ] 唯一性校验
+  - [ ] 状态校验（未支付订单不允许）
+  - [ ] 权限校验
+  - [ ] 审计日志完整性
 
 ### 用户登录（Code → OpenID）
 - **状态**：新增 （日期：2025-10-10）
