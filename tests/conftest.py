@@ -12,11 +12,6 @@ if str(ROOT_DIR) not in sys.path:
 
 import pytest
 import pytest_asyncio
-from app.core.security import TokenScope, create_access_token
-from app.db.base import Base
-from app.db.session import get_async_session
-from app.main import app
-from app.models.accounts import User
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
@@ -30,6 +25,12 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import UnaryExpression
+
+from app.core.security import TokenScope, create_access_token
+from app.db.base import Base
+from app.db.session import get_async_session
+from app.main import app
+from app.models.accounts import User
 
 
 @compiles(JSONB, "sqlite")

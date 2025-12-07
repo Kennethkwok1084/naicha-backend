@@ -4,6 +4,7 @@ import time
 from decimal import Decimal
 
 import pytest
+
 from app.core.settings import get_settings
 from app.models import catalog as catalog_module
 from app.models.catalog import (

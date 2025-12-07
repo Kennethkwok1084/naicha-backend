@@ -3,6 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
@@ -17,8 +20,6 @@ from app.models.catalog import (
 )
 from app.models.orders import AuditLog
 from app.services.menu import invalidate_menu_cache
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 
 def _admin_token(admin_id: int) -> str:

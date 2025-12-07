@@ -1,4 +1,5 @@
 """审计日志统一处理工具"""
+
 from __future__ import annotations
 
 import functools
@@ -90,7 +91,9 @@ def require_reason(param_name: str = "reason") -> Callable:
             for arg_value in kwargs.values():
                 if hasattr(arg_value, param_name):
                     reason_value = getattr(arg_value, param_name, None)
-                    if not reason_value or (isinstance(reason_value, str) and not reason_value.strip()):
+                    if not reason_value or (
+                        isinstance(reason_value, str) and not reason_value.strip()
+                    ):
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"Field '{param_name}' is required and cannot be empty for this operation.",
@@ -148,7 +151,9 @@ def audit_action(
                 for arg_value in kwargs.values():
                     if hasattr(arg_value, "reason"):
                         reason_value = getattr(arg_value, "reason", None)
-                        if not reason_value or (isinstance(reason_value, str) and not reason_value.strip()):
+                        if not reason_value or (
+                            isinstance(reason_value, str) and not reason_value.strip()
+                        ):
                             raise HTTPException(
                                 status_code=status.HTTP_400_BAD_REQUEST,
                                 detail="Field 'reason' is required for this high-risk operation.",
@@ -165,7 +170,9 @@ def audit_action(
 
             if admin and session and request:
                 # 尝试从结果或 kwargs 中提取审计相关信息
-                target_id = kwargs.get("order_id") or kwargs.get("product_id") or kwargs.get("member_id")
+                target_id = (
+                    kwargs.get("order_id") or kwargs.get("product_id") or kwargs.get("member_id")
+                )
                 if target_id:
                     target_id = str(target_id)
 

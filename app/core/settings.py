@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     wechat_appid: str = Field(default="test_appid", alias="WECHAT_APPID")
     wechat_secret: str = Field(default="test_secret", alias="WECHAT_SECRET")
     wechat_api_timeout: int = Field(default=5, alias="WECHAT_API_TIMEOUT")
-    
+
     # Token settings
     access_token_expire_minutes: int = Field(default=120, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS")

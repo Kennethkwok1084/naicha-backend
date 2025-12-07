@@ -2,11 +2,15 @@
 DEPRECATED: 这些测试针对旧的legacy认证路由
 新的微信认证功能已在 tests/api/test_wechat_auth.py 和 tests/services/test_wechat_auth_service.py 中完整测试
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
+
 from app.api.routes.users import user_login_legacy
 from app.core.security import TokenScope, create_access_token, decode_access_token
 from app.db.session import get_async_session
@@ -15,8 +19,6 @@ from app.models.accounts import User
 from app.models.orders import IdempotencyKey
 from app.schemas import UserLoginRequestSchema
 from app.services.auth import AuthService
-from fastapi import HTTPException
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.skip(reason="Legacy route deprecated, see test_wechat_auth.py for new tests")

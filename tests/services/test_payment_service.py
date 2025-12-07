@@ -5,8 +5,11 @@ import hmac
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import app.services.payments
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+import app.services.payments
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
@@ -17,8 +20,6 @@ from app.services.payments import (
     PaymentService,
 )
 from app.workers.print_jobs import recover_print_jobs
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 @pytest.fixture

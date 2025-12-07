@@ -13,6 +13,7 @@ def get_openid_or_ip(request: Request) -> str:
     if auth_header.startswith("Bearer "):
         try:
             from app.core.security import decode_access_token
+
             token = auth_header[7:]
             payload = decode_access_token(token)
             if payload.openid:

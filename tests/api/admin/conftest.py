@@ -1,4 +1,5 @@
 """Admin API 测试 fixtures"""
+
 from __future__ import annotations
 
 import pytest
@@ -7,8 +8,8 @@ from httpx import AsyncClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.accounts import Admin
 from app.core.security import hash_password
+from app.models.accounts import Admin
 
 
 @pytest_asyncio.fixture
@@ -87,6 +88,24 @@ async def clerk_token(async_client: AsyncClient, clerk_user: Admin) -> str:
     assert response.status_code == 200
     data = response.json()
     return data["access_token"]
+
+
+@pytest_asyncio.fixture
+async def admin_headers(admin_token: str) -> dict[str, str]:
+    """返回包含admin token的headers"""
+    return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest_asyncio.fixture
+async def manager_headers(manager_token: str) -> dict[str, str]:
+    """返回包含manager token的headers"""
+    return {"Authorization": f"Bearer {manager_token}"}
+
+
+@pytest_asyncio.fixture
+async def clerk_headers(clerk_token: str) -> dict[str, str]:
+    """返回包含clerk token的headers"""
+    return {"Authorization": f"Bearer {clerk_token}"}
 
 
 @pytest.fixture

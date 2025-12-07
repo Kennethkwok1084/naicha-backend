@@ -362,7 +362,9 @@ class AdminOrderStatusUpdateRequestSchema(BaseModel):
     """订单状态修改请求"""
 
     status: Literal["in_production", "ready_for_pickup", "completed", "cancelled"]
-    reason: str | None = Field(default=None, max_length=200, description="状态变更原因（取消时必填）")
+    reason: str | None = Field(
+        default=None, max_length=200, description="状态变更原因（取消时必填）"
+    )
 
     @model_validator(mode="after")
     def _validate_reason(self) -> AdminOrderStatusUpdateRequestSchema:

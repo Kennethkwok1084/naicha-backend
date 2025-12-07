@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product

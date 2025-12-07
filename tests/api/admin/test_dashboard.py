@@ -1,4 +1,5 @@
 """Dashboard API测试"""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -42,7 +43,7 @@ class TestDashboard:
         """测试自定义日期区间"""
         today = date.today()
         start = today - timedelta(days=7)
-        
+
         response = await async_client.get(
             f"/api/v1/admin/dashboard?start_date={start}&end_date={today}",
             headers={"Authorization": f"Bearer {admin_token}"},
@@ -72,7 +73,7 @@ class TestDashboard:
         """测试无效日期区间"""
         today = date.today()
         future = today + timedelta(days=7)
-        
+
         response = await async_client.get(
             f"/api/v1/admin/dashboard?start_date={future}&end_date={today}",
             headers={"Authorization": f"Bearer {admin_token}"},

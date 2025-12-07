@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import pytest
-from app.models.shop import ShopProfile, ShopSetting
 from sqlalchemy.exc import IntegrityError
+
+from app.models.shop import ShopProfile, ShopSetting
 
 
 @pytest.mark.asyncio

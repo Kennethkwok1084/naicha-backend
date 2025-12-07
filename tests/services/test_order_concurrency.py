@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.schemas import OrderCreateRequestSchema, OrderItemCreateSchema
 from app.services.orders import OrderService, OrderValidationError
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_product(session, *, stock: int) -> None:

@@ -1,9 +1,10 @@
 """微信小程序认证路由"""
+
 from typing import Optional
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
 
 from app.api.dependencies.auth import get_current_user
 from app.core.rate_limiter import limiter
@@ -36,7 +37,7 @@ async def wechat_login(
 ) -> WeChatLoginResponse:
     """
     微信小程序登录接口
-    
+
     - 验证code有效性和防重放
     - 调用微信jscode2session获取openid
     - 创建或更新用户信息
@@ -44,14 +45,14 @@ async def wechat_login(
     """
     settings = get_settings()
     auth_service = WeChatAuthService(db)
-    
+
     try:
         result = await auth_service.login_with_code(
             code=payload.code,
             nickname=payload.nickname,
             avatar_url=payload.avatar_url,
         )
-        
+
         return WeChatLoginResponse(
             access_token=result["access_token"],
             refresh_token=result["refresh_token"],
@@ -61,6 +62,7 @@ async def wechat_login(
         )
     except ValueError as exc:
         from slowapi.util import get_remote_address
+
         logger.warning("wechat.login.failed", error=str(exc), ip=get_remote_address(request))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -68,6 +70,7 @@ async def wechat_login(
         ) from exc
     except Exception as exc:
         from slowapi.util import get_remote_address
+
         logger.error("wechat.login.error", error=str(exc), ip=get_remote_address(request))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -90,27 +93,28 @@ async def bind_phone(
 ) -> BindPhoneResponse:
     """
     绑定手机号接口
-    
+
     - 需要已登录用户或提供guest_session_id
     - 验证code有效性和防重放
     - 调用微信API获取手机号
     - 绑定到当前用户
     """
     auth_service = WeChatAuthService(db)
-    
+
     try:
         result = await auth_service.bind_phone_number(
             code=payload.code,
             user_id=current_user.user_id,
             guest_session_id=payload.guest_session_id,
         )
-        
+
         return BindPhoneResponse(
             phone=result["phone"],
             from_guest_session=result["from_guest_session"],
         )
     except ValueError as exc:
         from slowapi.util import get_remote_address
+
         logger.warning(
             "wechat.bind_phone.failed",
             user_id=current_user.user_id,
@@ -123,6 +127,7 @@ async def bind_phone(
         ) from exc
     except Exception as exc:
         from slowapi.util import get_remote_address
+
         logger.error(
             "wechat.bind_phone.error",
             user_id=current_user.user_id,

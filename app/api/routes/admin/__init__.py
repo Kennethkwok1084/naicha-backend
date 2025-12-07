@@ -1,9 +1,10 @@
 """Admin API 路由聚合器"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import ads, auth, dashboard, inventory, orders, payments, pos, want
+from . import ads, auth, dashboard, inventory, orders, payments, pos, products, want
 
 router = APIRouter()
 
@@ -16,5 +17,6 @@ router.include_router(inventory.router, tags=["admin-inventory"])
 router.include_router(want.router, tags=["admin-want"])
 router.include_router(ads.router, tags=["admin-ads"])
 router.include_router(orders.router, tags=["admin-orders"])
+router.include_router(products.router, tags=["admin-products"], prefix="/products")
 
 __all__ = ["router"]

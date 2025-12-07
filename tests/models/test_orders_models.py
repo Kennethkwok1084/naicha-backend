@@ -4,9 +4,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.exc import IntegrityError
+
 from app.models.accounts import User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
-from sqlalchemy.exc import IntegrityError
 
 
 @pytest.mark.asyncio

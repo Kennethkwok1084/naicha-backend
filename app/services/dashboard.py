@@ -72,10 +72,10 @@ class DashboardService:
         # 参数验证：必须提供 range_key 或 (start_date + end_date)
         if range_key is None and (start_date is None or end_date is None):
             raise ValueError("Either range_key or both start_date and end_date must be provided")
-        
+
         if range_key is not None:
             self._ensure_valid_range(range_key)
-        
+
         # 构建缓存键（包含所有参数）
         if start_date and end_date:
             cache_key = f"custom:{start_date.date()}:{end_date.date()}:{int(compare)}:{top_n}"
@@ -115,8 +115,10 @@ class DashboardService:
                     days_diff = (end.date() - start.date()).days + 1
                     previous_end = start - timedelta(seconds=1)
                     previous_start = previous_end - timedelta(days=days_diff)
-                    previous_start = previous_start.replace(hour=0, minute=0, second=0, microsecond=0)
-                
+                    previous_start = previous_start.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+
                 compare_summary = await self._fetch_summary(previous_start, previous_end)
                 payload["compare_summary"] = compare_summary
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import has_permission
 from app.core.security import InvalidTokenError, TokenScope, decode_access_token
 from app.db.session import get_async_session
 from app.models.accounts import Admin, User
@@ -39,6 +42,7 @@ async def get_current_admin(
     # 检查token黑名单
     if payload.jti:
         from app.core.security import is_token_blacklisted
+
         if await is_token_blacklisted(payload.jti, session):
             raise _unauthorized("Token has been revoked.")
 
@@ -75,6 +79,7 @@ async def get_current_user(
     # 检查token黑名单
     if payload.jti:
         from app.core.security import is_token_blacklisted
+
         if await is_token_blacklisted(payload.jti, session):
             raise _unauthorized("Token has been revoked.")
 
@@ -111,6 +116,7 @@ async def get_current_user_optional(
     # 检查token黑名单
     if payload.jti:
         from app.core.security import is_token_blacklisted
+
         if await is_token_blacklisted(payload.jti, session):
             raise _unauthorized("Token has been revoked.")
 
@@ -130,3 +136,32 @@ async def get_current_user_optional(
     if not user:
         raise _unauthorized("User not found or inactive.")
     return user
+
+
+def require_permission(permission: str) -> Callable[[Admin], Admin]:
+    """权限检查依赖工厂
+
+    Args:
+        permission: 所需权限点（如 Permission.PRODUCTS_EDIT）
+
+    Returns:
+        依赖函数，用于 Depends()
+
+    Example:
+        @router.post("/products")
+        async def create_product(
+            admin: Annotated[Admin, Depends(require_permission(Permission.PRODUCTS_EDIT))],
+            ...
+        ):
+            ...
+    """
+
+    async def check_permission(admin: Admin = Depends(get_current_admin)) -> Admin:
+        if not has_permission(admin.role, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required: {permission}",
+            )
+        return admin
+
+    return check_permission

@@ -1,4 +1,5 @@
 """POS 快速建单接口"""
+
 from __future__ import annotations
 
 import time

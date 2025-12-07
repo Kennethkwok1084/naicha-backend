@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.api.routes.me import list_addresses
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
@@ -10,7 +12,6 @@ from app.main import app
 from app.models.accounts import User, UserAddress
 from app.models.orders import Order, OrderItem
 from app.services.user import UserService
-from httpx import ASGITransport, AsyncClient
 
 
 def _auth_header(user_id: int) -> dict[str, str]:

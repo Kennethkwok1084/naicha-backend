@@ -3,8 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from sqlalchemy.exc import IntegrityError
+
+from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 
 
 @pytest.mark.asyncio

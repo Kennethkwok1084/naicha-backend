@@ -1,4 +1,5 @@
 """Dashboard 看板接口"""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -6,6 +7,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from slowapi.util import get_remote_address
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import get_current_admin
 from app.core.permissions import Permission, has_permission
@@ -15,7 +17,6 @@ from app.db.session import get_async_session
 from app.models.accounts import Admin
 from app.schemas import DashboardResponseSchema
 from app.services.dashboard import DashboardService
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -60,7 +61,7 @@ async def get_admin_dashboard(
     # 参数验证和转换
     start_date_obj: date | None = None
     end_date_obj: date | None = None
-    
+
     if start_date:
         try:
             start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
@@ -69,7 +70,7 @@ async def get_admin_dashboard(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="start_date must be in YYYY-MM-DD format",
             )
-    
+
     if end_date:
         try:
             end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -78,17 +79,18 @@ async def get_admin_dashboard(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="end_date must be in YYYY-MM-DD format",
             )
-    
+
     if start_date_obj and end_date_obj and start_date_obj > end_date_obj:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_date must be before or equal to end_date",
         )
-    
+
     # 如果提供了自定义日期，优先使用
     if start_date_obj and end_date_obj:
         # 转换 date 为 UTC-aware datetime
         from datetime import UTC, time
+
         start_datetime = datetime.combine(start_date_obj, time.min, tzinfo=UTC)
         end_datetime = datetime.combine(end_date_obj, time.max, tzinfo=UTC)
         range_key_param = None
@@ -96,7 +98,7 @@ async def get_admin_dashboard(
         start_datetime = None
         end_datetime = None
         range_key_param = range
-    
+
     try:
         payload = await dashboard_service.get_dashboard(
             range_key=range_key_param,

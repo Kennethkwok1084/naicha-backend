@@ -1,11 +1,12 @@
 """订单管理API测试"""
+
 from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orders import Order, OrderItem, AuditLog
+from app.models.orders import AuditLog, Order, OrderItem
 
 
 class TestOrderList:
@@ -29,9 +30,7 @@ class TestOrderList:
         assert isinstance(data["items"], list)
 
     @pytest.mark.asyncio
-    async def test_list_orders_with_pagination(
-        self, async_client: AsyncClient, admin_token: str
-    ):
+    async def test_list_orders_with_pagination(self, async_client: AsyncClient, admin_token: str):
         """测试分页参数"""
         response = await async_client.get(
             "/api/v1/admin/orders?page=1&page_size=10",
@@ -76,9 +75,7 @@ class TestOrderDetail:
     """订单详情测试"""
 
     @pytest.mark.asyncio
-    async def test_get_order_detail_not_found(
-        self, async_client: AsyncClient, admin_token: str
-    ):
+    async def test_get_order_detail_not_found(self, async_client: AsyncClient, admin_token: str):
         """测试订单不存在"""
         response = await async_client.get(
             "/api/v1/admin/orders/999999",

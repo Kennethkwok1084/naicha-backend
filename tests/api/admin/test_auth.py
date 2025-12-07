@@ -1,4 +1,5 @@
 """管理员认证测试"""
+
 from __future__ import annotations
 
 import pytest
@@ -95,7 +96,9 @@ class TestRolePermissions:
     """角色权限测试"""
 
     @pytest.mark.asyncio
-    async def test_admin_role_has_all_permissions(self, async_client: AsyncClient, admin_token: str):
+    async def test_admin_role_has_all_permissions(
+        self, async_client: AsyncClient, admin_token: str
+    ):
         """测试admin角色拥有所有权限"""
         response = await async_client.get(
             "/api/v1/admin/me",
@@ -103,7 +106,7 @@ class TestRolePermissions:
         )
         assert response.status_code == 200
         permissions = response.json()["permissions"]
-        
+
         # admin应该拥有所有权限
         required_permissions = [
             "dashboard.view",
@@ -129,17 +132,19 @@ class TestRolePermissions:
         )
         assert response.status_code == 200
         permissions = response.json()["permissions"]
-        
+
         # manager应该有业务权限
         assert "orders.view" in permissions
         assert "orders.edit" in permissions
         assert "products.view" in permissions
-        
+
         # manager不应该有系统管理权限
         assert "system.admins.manage" not in permissions
 
     @pytest.mark.asyncio
-    async def test_clerk_role_readonly_permissions(self, async_client: AsyncClient, clerk_token: str):
+    async def test_clerk_role_readonly_permissions(
+        self, async_client: AsyncClient, clerk_token: str
+    ):
         """测试clerk角色只读权限"""
         response = await async_client.get(
             "/api/v1/admin/me",
@@ -147,12 +152,12 @@ class TestRolePermissions:
         )
         assert response.status_code == 200
         permissions = response.json()["permissions"]
-        
+
         # clerk应该有只读权限
         assert "orders.view" in permissions
         assert "products.view" in permissions
         assert "orders.pos.create" in permissions  # 可以POS下单
-        
+
         # clerk不应该有编辑权限
         assert "orders.edit" not in permissions
         assert "orders.refund" not in permissions

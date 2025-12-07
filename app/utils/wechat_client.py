@@ -1,4 +1,5 @@
 """微信小程序API客户端"""
+
 from __future__ import annotations
 
 import hashlib
@@ -89,7 +90,7 @@ class WeChatClient:
         # 需要access_token,这里简化为直接调用API
         # 生产环境应缓存access_token
         access_token = await self._get_access_token()
-        
+
         url = f"{self.BASE_URL}/wxa/business/getuserphonenumber"
         params = {"access_token": access_token}
         payload = {"code": code}

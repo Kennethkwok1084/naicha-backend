@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.api.routes.shop import get_shop_service
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.main import app
 from app.models.shop import ShopProfile
 from app.services.shop import ShopService
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

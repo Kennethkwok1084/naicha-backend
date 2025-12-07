@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from app.models.accounts import Coupon, User, UserAddress
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+
+from app.models.accounts import Coupon, User, UserAddress
 
 
 @pytest.mark.asyncio

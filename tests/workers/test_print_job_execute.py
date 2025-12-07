@@ -3,13 +3,14 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.models.orders import Order, OrderItem, PrintJob
 from app.workers.print_jobs import (
     NonRetryablePrintJobError,
     execute_print_job,
 )
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 @pytest.mark.asyncio

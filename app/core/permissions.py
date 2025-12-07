@@ -1,4 +1,5 @@
 """Admin RBAC 权限点定义与角色映射"""
+
 from __future__ import annotations
 
 from enum import Enum

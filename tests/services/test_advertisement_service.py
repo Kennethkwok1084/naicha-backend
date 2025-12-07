@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+
 from app.models.advertisement import AdCreative, AdPlacement, AdSlot
 from app.schemas import AdCreativeUpdateSchema
 from app.services.advertisement import AdvertisementService

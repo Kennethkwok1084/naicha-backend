@@ -22,6 +22,7 @@ from app.db.base import BIGINT_PK, Base, CreatedAtMixin, TimestampMixin
 
 class WeChatUsedCode(Base, CreatedAtMixin):
     """防止微信code重复使用"""
+
     __tablename__ = "wechat_used_codes"
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
@@ -37,6 +38,7 @@ class WeChatUsedCode(Base, CreatedAtMixin):
 
 class TokenBlacklist(Base, CreatedAtMixin):
     """token黑名单,用于踢下线"""
+
     __tablename__ = "token_blacklist"
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True)
@@ -45,9 +47,7 @@ class TokenBlacklist(Base, CreatedAtMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    __table_args__ = (
-        Index("ix_token_blacklist_expires", "expires_at"),
-    )
+    __table_args__ = (Index("ix_token_blacklist_expires", "expires_at"),)
 
 
 class Admin(Base, CreatedAtMixin):

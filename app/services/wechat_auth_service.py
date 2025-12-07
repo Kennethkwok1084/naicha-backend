@@ -1,4 +1,5 @@
 """微信认证服务"""
+
 from __future__ import annotations
 
 import html
@@ -8,7 +9,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, hash_code, TokenScope
+from app.core.security import TokenScope, create_access_token, hash_code
 from app.models.accounts import User, WeChatUsedCode
 from app.utils.wechat_client import WeChatAPIError, get_wechat_client
 
@@ -48,6 +49,7 @@ class WeChatAuthService:
         except Exception as exc:
             # 显式捕获数据库唯一约束冲突
             from sqlalchemy.exc import IntegrityError
+
             if isinstance(exc, IntegrityError) or isinstance(exc.__cause__, IntegrityError):
                 await self.db.rollback()  # 清理失败事务状态
                 logger.warning("wechat.login.code_reused_concurrent", code_hash=code_hash[:16])
@@ -129,6 +131,7 @@ class WeChatAuthService:
         except Exception as exc:
             # 显式捕获数据库唯一约束冲突
             from sqlalchemy.exc import IntegrityError
+
             if isinstance(exc, IntegrityError) or isinstance(exc.__cause__, IntegrityError):
                 await self.db.rollback()  # 清理失败事务状态
                 logger.warning("wechat.bind_phone.code_reused_concurrent", code_hash=code_hash[:16])

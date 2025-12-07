@@ -4,10 +4,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from app.models.accounts import Coupon, User
-from app.models.catalog import Category, Product
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.accounts import Coupon, User
+from app.models.catalog import Category, Product
 
 
 @pytest.fixture

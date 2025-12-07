@@ -1,4 +1,5 @@
 """支付匹配接口"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -79,7 +80,7 @@ async def match_static_payment(
             ip=request.client.host if request.client else None,
             user_agent=request.headers.get("User-Agent"),
         )
-        
+
         # 记录审计日志
         await record_audit_log(
             session=session,
@@ -95,7 +96,7 @@ async def match_static_payment(
             },
             request=request,
         )
-        
+
         await DashboardService(session, settings).invalidate_cache()
         return result
     except PaymentMatchAmbiguousError as exc:

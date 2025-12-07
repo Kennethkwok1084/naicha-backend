@@ -7,6 +7,9 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.security import TokenScope, create_access_token
 from app.core.settings import get_settings
 from app.db.session import get_async_session
@@ -23,8 +26,6 @@ from app.models.orders import IdempotencyKey, Order, OrderItem
 from app.models.shop import ShopProfile
 from app.schemas import WechatPaymentNotifySchema
 from app.services.payments import PaymentService
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_product(db_session) -> None:
@@ -165,7 +166,9 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                 paid_at=datetime.now(tz=UTC),
             )
             raw_body = payment_payload.model_dump_json().encode("utf-8")
-            signature = hmac.new(settings.secret_key.encode("utf-8"), raw_body, "sha256").hexdigest()
+            signature = hmac.new(
+                settings.secret_key.encode("utf-8"), raw_body, "sha256"
+            ).hexdigest()
             payment_result = await payment_service.handle_wechat_notification(
                 payment_payload, raw_body=raw_body, signature=signature
             )
@@ -432,14 +435,15 @@ async def test_cancel_order_success(db_session) -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
 
-
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == "cancelled"
         assert payload["order_id"] == order.order_id
-        
+
     finally:
         app.dependency_overrides.pop(get_async_session, None)
+
+
 @pytest.mark.asyncio
 async def test_cancel_order_not_found(db_session) -> None:
     """测试取消不存在的订单"""

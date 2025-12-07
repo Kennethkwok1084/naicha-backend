@@ -1,4 +1,5 @@
 """库存管理接口"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

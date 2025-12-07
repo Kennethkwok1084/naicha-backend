@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import Admin
 from app.models.advertisement import AdSlot
 from app.services.advertisement import AdvertisementService
-from httpx import ASGITransport, AsyncClient
 
 
 def _admin_token(admin_id: int) -> str:

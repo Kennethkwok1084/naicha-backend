@@ -1,9 +1,10 @@
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.api.routes import system as system_routes
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.main import app
-from httpx import ASGITransport, AsyncClient
 
 
 def test_get_app_settings_returns_cached_settings() -> None:

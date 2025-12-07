@@ -83,7 +83,7 @@ def create_access_token(
     include_jti: bool = False,
 ) -> str:
     settings = get_settings()
-    
+
     # 如果显式提供了expires_delta，优先使用它（用于测试过期token等场景）
     if expires_delta is not None:
         ttl = expires_delta
@@ -93,7 +93,7 @@ def create_access_token(
         ttl = timedelta(minutes=settings.access_token_expire_minutes)
     else:
         ttl = timedelta(minutes=settings.jwt_expire_minutes)
-    
+
     expires_at = datetime.now(tz=UTC) + ttl
     payload = _build_payload(subject, scope, expires_at, openid, include_jti)
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
@@ -103,11 +103,13 @@ async def is_token_blacklisted(jti: str | None, session) -> bool:
     """检查token是否在黑名单中"""
     if not jti:
         return False
-    
-    from sqlalchemy import select
-    from app.models.accounts import TokenBlacklist
+
     from datetime import UTC, datetime
-    
+
+    from sqlalchemy import select
+
+    from app.models.accounts import TokenBlacklist
+
     stmt = select(TokenBlacklist).where(
         TokenBlacklist.token_jti == jti,
         TokenBlacklist.expires_at > datetime.now(UTC),

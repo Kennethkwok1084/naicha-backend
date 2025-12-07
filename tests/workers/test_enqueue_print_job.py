@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from app.workers import enqueue_print_job, process_print_job
 from celery.exceptions import CeleryError
+
+from app.workers import enqueue_print_job, process_print_job
 
 
 @pytest.mark.asyncio

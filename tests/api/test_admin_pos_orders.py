@@ -3,14 +3,15 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import Admin, User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import AuditLog, Order, PrintJob
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 
 async def _seed_menu(db_session) -> None:

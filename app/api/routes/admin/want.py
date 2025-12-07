@@ -1,4 +1,5 @@
 """想要统计接口"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status

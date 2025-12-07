@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.db.session import get_async_session
 from app.main import app
 from app.models.catalog import (
@@ -14,7 +16,6 @@ from app.models.catalog import (
     SpecOption,
 )
 from app.services.menu import invalidate_menu_cache
-from httpx import ASGITransport, AsyncClient
 
 
 async def _prepare_basic_menu(db_session) -> Product:

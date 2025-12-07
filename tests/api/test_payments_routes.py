@@ -6,14 +6,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.main import app
 from app.models.catalog import Category, Product
 from app.models.orders import IdempotencyKey, Order, PaymentRecord, PrintJob
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 def _sign(body: bytes) -> str:

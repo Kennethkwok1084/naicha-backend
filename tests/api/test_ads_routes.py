@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.db.session import get_async_session
 from app.main import app
 from app.models.advertisement import AdCreative, AdPlacement, AdSlot
 from app.services.advertisement import AdvertisementService
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture(autouse=True)

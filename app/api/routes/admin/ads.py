@@ -1,4 +1,5 @@
 """广告管理接口"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -116,7 +117,7 @@ async def create_ad_slot(
     async with transaction_ctx:
         try:
             slot = await service.create_slot(payload)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,
@@ -125,7 +126,11 @@ async def create_ad_slot(
                 target_table="ad_slots",
                 target_id=slot.slot_code,
                 before_json=None,
-                after_json={"slot_code": slot.slot_code, "name": slot.name, "platform": slot.platform},
+                after_json={
+                    "slot_code": slot.slot_code,
+                    "name": slot.name,
+                    "platform": slot.platform,
+                },
                 request=request,
             )
         except AdvertisementServiceError as exc:
@@ -162,7 +167,7 @@ async def update_ad_slot(
     async with transaction_ctx:
         try:
             slot = await service.update_slot(slot_code, payload)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,
@@ -229,7 +234,7 @@ async def create_ad_creative(
     transaction_ctx = session.begin_nested() if session.in_transaction() else session.begin()
     async with transaction_ctx:
         creative = await service.create_creative(payload)
-        
+
         # 记录审计日志
         await record_audit_log(
             session=session,
@@ -238,7 +243,11 @@ async def create_ad_creative(
             target_table="ad_creatives",
             target_id=str(creative.creative_id),
             before_json=None,
-            after_json={"creative_id": creative.creative_id, "title": creative.title, "enabled": creative.enabled},
+            after_json={
+                "creative_id": creative.creative_id,
+                "title": creative.title,
+                "enabled": creative.enabled,
+            },
             request=request,
         )
     return AdCreativeResponseSchema.model_validate(creative)
@@ -270,7 +279,7 @@ async def update_ad_creative(
     async with transaction_ctx:
         try:
             creative = await service.update_creative(creative_id, payload)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,
@@ -312,7 +321,7 @@ async def delete_ad_creative(
     async with transaction_ctx:
         try:
             await service.delete_creative(creative_id)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,
@@ -382,7 +391,7 @@ async def create_ad_placement(
     async with transaction_ctx:
         try:
             placement = await service.add_placement(payload)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,
@@ -433,7 +442,7 @@ async def update_ad_placement_order(
     async with transaction_ctx:
         try:
             await service.update_placement_order(payload)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,
@@ -474,7 +483,7 @@ async def delete_ad_placement(
     async with transaction_ctx:
         try:
             await service.remove_placement(placement_id)
-            
+
             # 记录审计日志
             await record_audit_log(
                 session=session,

@@ -1,4 +1,5 @@
 """Admin 认证相关接口"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status

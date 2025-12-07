@@ -1,4 +1,5 @@
 """测试微信认证服务"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -38,22 +39,22 @@ class TestWeChatAuthService:
             "session_key": "test_session_key",
             "unionid": "test_unionid_123",
         }
-        
+
         service = WeChatAuthService(db_session)
-        
+
         # 执行
         result = await service.login_with_code(
             code="test_code_123",
             nickname="测试用户",
             avatar_url="https://example.com/avatar.jpg",
         )
-        
+
         # 验证
         assert "access_token" in result
         assert "refresh_token" in result
         assert result["user_id"] > 0
         assert result["is_new_user"] is True
-        
+
         # 验证用户已创建
         user = await db_session.get(User, result["user_id"])
         assert user is not None
@@ -73,43 +74,41 @@ class TestWeChatAuthService:
         )
         db_session.add(user)
         await db_session.commit()
-        
+
         mock_wechat_client.jscode2session.return_value = {
             "openid": "existing_openid",
             "session_key": "test_session_key",
             "unionid": None,
         }
-        
+
         service = WeChatAuthService(db_session)
-        
+
         # 执行
         result = await service.login_with_code(
             code="test_code_456",
             nickname="新昵称",
             avatar_url="https://example.com/new.jpg",
         )
-        
+
         # 验证
         assert result["user_id"] == user.user_id
-        
+
         # 验证用户信息已更新
         await db_session.refresh(user)
         assert user.nickname == "新昵称"
         assert user.avatar_url == "https://example.com/new.jpg"
 
-    async def test_login_with_code_reused(
-        self, db_session: AsyncSession, mock_wechat_client
-    ):
+    async def test_login_with_code_reused(self, db_session: AsyncSession, mock_wechat_client):
         """测试code重复使用被拒绝"""
         # 准备：mock微信响应
         mock_wechat_client.jscode2session.return_value = {
             "openid": "some_openid",
             "session_key": "some_session_key",
         }
-        
+
         # 准备：标记code已使用
         from app.core.security import hash_code
-        
+
         code_hash = hash_code("reused_code")
         used_code = WeChatUsedCode(
             code_hash=code_hash,
@@ -118,54 +117,50 @@ class TestWeChatAuthService:
         )
         db_session.add(used_code)
         await db_session.commit()
-        
+
         service = WeChatAuthService(db_session)
-        
+
         # 执行并验证
         with pytest.raises(ValueError, match="登录凭证已使用"):
             await service.login_with_code(code="reused_code")
 
-    async def test_login_wechat_api_error(
-        self, db_session: AsyncSession, mock_wechat_client
-    ):
+    async def test_login_wechat_api_error(self, db_session: AsyncSession, mock_wechat_client):
         """测试微信API错误处理"""
         # 准备
         mock_wechat_client.jscode2session.side_effect = WeChatAPIError(40029, "code无效")
-        
+
         service = WeChatAuthService(db_session)
-        
+
         # 执行并验证
         with pytest.raises(ValueError, match="微信登录失败"):
             await service.login_with_code(code="invalid_code")
 
-    async def test_bind_phone_number_success(
-        self, db_session: AsyncSession, mock_wechat_client
-    ):
+    async def test_bind_phone_number_success(self, db_session: AsyncSession, mock_wechat_client):
         """测试绑定手机号成功"""
         # 准备：创建用户
         user = User(open_id="test_openid", nickname="测试用户")
         db_session.add(user)
         await db_session.commit()
-        
+
         mock_wechat_client.get_phone_number.return_value = {
             "phone_number": "+86 138 1234 5678",
             "pure_phone_number": "13812345678",
             "country_code": "86",
         }
-        
+
         service = WeChatAuthService(db_session)
-        
+
         # 执行
         result = await service.bind_phone_number(
             code="phone_code_123",
             user_id=user.user_id,
             guest_session_id="guest_abc",
         )
-        
+
         # 验证
         assert result["phone"] == "138****5678"
         assert result["from_guest_session"] is True
-        
+
         # 验证用户手机号已更新
         await db_session.refresh(user)
         assert user.phone == "13812345678"
@@ -177,8 +172,9 @@ class TestWeChatAuthService:
         # 准备：创建用户并标记code已使用
         user = User(open_id="test_openid", nickname="测试用户")
         db_session.add(user)
-        
+
         from app.core.security import hash_code
+
         code_hash = hash_code("phone_reused_code")
         used_code = WeChatUsedCode(
             code_hash=code_hash,
@@ -187,9 +183,9 @@ class TestWeChatAuthService:
         )
         db_session.add(used_code)
         await db_session.commit()
-        
+
         service = WeChatAuthService(db_session)
-        
+
         # 执行并验证
         with pytest.raises(ValueError, match="手机号凭证已使用"):
             await service.bind_phone_number(
@@ -200,12 +196,12 @@ class TestWeChatAuthService:
     async def test_sanitize_nickname_xss_protection(self, db_session: AsyncSession):
         """测试昵称XSS防护"""
         service = WeChatAuthService(db_session)
-        
+
         # 测试HTML转义
         nickname = service._sanitize_nickname("<script>alert('xss')</script>")
         assert "<script>" not in nickname
         assert "&lt;script&gt;" in nickname
-        
+
         # 测试长度限制
         long_nickname = "a" * 100
         sanitized = service._sanitize_nickname(long_nickname)
@@ -214,15 +210,15 @@ class TestWeChatAuthService:
     async def test_sanitize_avatar_url_validation(self, db_session: AsyncSession):
         """测试头像URL验证"""
         service = WeChatAuthService(db_session)
-        
+
         # 测试有效URL
         valid_url = "https://example.com/avatar.jpg"
         assert service._sanitize_avatar_url(valid_url) == valid_url
-        
+
         # 测试无效URL（不是http/https）
         invalid_url = "javascript:alert('xss')"
         assert service._sanitize_avatar_url(invalid_url) is None
-        
+
         # 测试长度限制
         long_url = "https://example.com/" + "a" * 600
         sanitized = service._sanitize_avatar_url(long_url)

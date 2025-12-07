@@ -7,6 +7,8 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.models.accounts import Coupon, User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
@@ -26,7 +28,6 @@ from app.services.orders import (
     OrderService,
     OrderValidationError,
 )
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_menu(db_session):

@@ -1,4 +1,5 @@
 """订单管理接口"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -173,11 +174,7 @@ async def get_order_detail(
         )
 
     # 查询订单（包含订单项和用户信息）
-    stmt = (
-        select(Order)
-        .options(selectinload(Order.items))
-        .where(Order.order_id == order_id)
-    )
+    stmt = select(Order).options(selectinload(Order.items)).where(Order.order_id == order_id)
     result = await session.execute(stmt)
     order = result.scalar_one_or_none()
 
@@ -433,7 +430,9 @@ async def refund_order(
         amount=payload.amount,
         status="success" if payload.refund_type == "offline" else "processing",
         refund_id=refund_id if payload.refund_type == "offline" else None,
-        message="线下退款已标记" if payload.refund_type == "offline" else "退款处理中，请稍后查询结果",
+        message=(
+            "线下退款已标记" if payload.refund_type == "offline" else "退款处理中，请稍后查询结果"
+        ),
     )
 
 
