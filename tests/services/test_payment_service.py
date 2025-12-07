@@ -5,19 +5,21 @@ import hmac
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import app.services.payments
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+import app.services.payments
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.orders import Order, OrderItem, PaymentRecord, PrintJob
+from app.models.shop import ShopSetting
 from app.schemas import WechatPaymentNotifySchema
 from app.services.payments import (
     PaymentConflictError,
     PaymentService,
 )
 from app.workers.print_jobs import recover_print_jobs
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 @pytest.fixture
@@ -76,7 +78,9 @@ async def test_payment_service_amount_mismatch(
     raw_body = payload.model_dump_json().encode("utf-8")
 
     with pytest.raises(PaymentConflictError):
-        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+        await service.handle_wechat_notification(
+            payload, raw_body=raw_body, signature=_sign(raw_body)
+        )
 
     payment = await db_session.execute(
         select(PaymentRecord).where(PaymentRecord.txn_id == "txn_mismatch")
@@ -142,6 +146,7 @@ async def test_payment_service_nested_transaction(
         refreshed = await session.get(Order, order_id)
         assert refreshed is not None
         assert refreshed.status == "paid"
+        assert refreshed.pickup_code
 
         payment_record = await session.scalar(
             select(PaymentRecord).where(PaymentRecord.txn_id == "txn_nested")
@@ -152,7 +157,9 @@ async def test_payment_service_nested_transaction(
     assert len(enqueue_spy) == 1
 
 
-async def _prepare_order_for_loyalty(session, *, user_id: int, quantity: int, order_id: int) -> Order:
+async def _prepare_order_for_loyalty(
+    session, *, user_id: int, quantity: int, order_id: int
+) -> Order:
     order = Order(
         order_id=order_id,
         order_number=f"LOYALTY-{order_id}",
@@ -186,7 +193,9 @@ async def test_payment_service_awards_loyalty_points(
         user = User(user_id=300, open_id="openid-loyalty")
         setup_session.add(user)
         await setup_session.flush()
-        await _prepare_order_for_loyalty(setup_session, user_id=user.user_id, quantity=2, order_id=30)
+        await _prepare_order_for_loyalty(
+            setup_session, user_id=user.user_id, quantity=2, order_id=30
+        )
         await setup_session.commit()
 
     payload = WechatPaymentNotifySchema(
@@ -225,7 +234,9 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
         user = User(user_id=400, open_id="openid-coupon", loyalty_points=9)
         setup_session.add(user)
         await setup_session.flush()
-        await _prepare_order_for_loyalty(setup_session, user_id=user.user_id, quantity=2, order_id=40)
+        await _prepare_order_for_loyalty(
+            setup_session, user_id=user.user_id, quantity=2, order_id=40
+        )
         await setup_session.commit()
 
     payload = WechatPaymentNotifySchema(
@@ -242,8 +253,12 @@ async def test_payment_service_loyalty_issues_coupon_and_is_idempotent(
 
     async with session_factory() as session:
         service = PaymentService(session, get_settings())
-        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
-        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+        await service.handle_wechat_notification(
+            payload, raw_body=raw_body, signature=_sign(raw_body)
+        )
+        await service.handle_wechat_notification(
+            payload, raw_body=raw_body, signature=_sign(raw_body)
+        )
 
         assert enqueue_spy  # 多次通知可触发多次入队,至少保证有入队行为
         assert payment_side_effects_spy == [{"order_id": 40, "source": "payment_callback"}]
@@ -307,9 +322,7 @@ async def test_payment_notification_creates_single_print_job(
     async with session_factory() as verify_session:
         job_rows = list(
             (
-                await verify_session.execute(
-                    select(PrintJob).where(PrintJob.order_id == order_id)
-                )
+                await verify_session.execute(select(PrintJob).where(PrintJob.order_id == order_id))
             ).scalars()
         )
         assert len(job_rows) == 1
@@ -384,9 +397,13 @@ async def test_payment_service_logs_replayed_notification(
 
     async with session_factory() as session:
         service = PaymentService(session, get_settings())
-        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+        await service.handle_wechat_notification(
+            payload, raw_body=raw_body, signature=_sign(raw_body)
+        )
         info_calls.clear()
-        await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+        await service.handle_wechat_notification(
+            payload, raw_body=raw_body, signature=_sign(raw_body)
+        )
 
     assert any(
         event == "payment.notification_replayed"
@@ -454,9 +471,7 @@ async def test_payment_commit_but_enqueue_failed(db_session, monkeypatch) -> Non
         assert response["status"] == "SUCCESS"
 
     async with session_factory() as verify_session:
-        job = await verify_session.scalar(
-            select(PrintJob).where(PrintJob.order_id == order_id)
-        )
+        job = await verify_session.scalar(select(PrintJob).where(PrintJob.order_id == order_id))
         assert job is not None
         assert job.status == "pending"
         assert job.next_try_at is not None
@@ -468,3 +483,53 @@ async def test_payment_commit_but_enqueue_failed(db_session, monkeypatch) -> Non
         settings=settings,
     )
     assert job_id in recovered_ids
+
+
+@pytest.mark.asyncio
+async def test_payment_service_pickup_code_respects_settings(db_session) -> None:
+    order = Order(
+        order_id=920,
+        order_number="PICKUP-CUSTOM-1",
+        total_price=Decimal("28.00"),
+        status="pending_payment",
+        order_type="pickup",
+    )
+    db_session.add(order)
+    db_session.add(
+        OrderItem(
+            item_id=9201,
+            order_id=order.order_id,
+            product_id=None,
+            product_name="定制取餐码饮品",
+            quantity=1,
+            unit_price=Decimal("28.00"),
+        )
+    )
+    db_session.add_all(
+        [
+            ShopSetting(key="pickup_code_prefix", value="NA-"),
+            ShopSetting(key="pickup_code_digits", value="4"),
+        ]
+    )
+    await db_session.flush()
+
+    payload = WechatPaymentNotifySchema(
+        event_id="evt_pickup_custom",
+        order_number=order.order_number,
+        transaction_id="txn_pickup_custom",
+        amount=28.0,
+        currency="CNY",
+        channel="wechat_jsapi",
+        status="SUCCESS",
+        paid_at=datetime.now(tz=UTC),
+    )
+    raw_body = payload.model_dump_json().encode("utf-8")
+
+    service = PaymentService(db_session, get_settings())
+    await service.handle_wechat_notification(payload, raw_body=raw_body, signature=_sign(raw_body))
+
+    refreshed = await db_session.get(Order, order.order_id)
+    assert refreshed is not None
+    assert refreshed.pickup_code
+    assert refreshed.pickup_code.startswith("NA-")
+    assert len(refreshed.pickup_code) == 3 + 4

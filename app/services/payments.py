@@ -25,6 +25,7 @@ from app.metrics.payments import (
 )
 from app.models.orders import Order, PaymentRecord, PrintJob
 from app.schemas.payment import WechatPaymentNotifySchema
+from app.services.pickup_code import ensure_pickup_code
 from app.workers import enqueue_payment_side_effects, enqueue_print_job
 
 logger = get_logger(__name__)
@@ -120,6 +121,7 @@ class PaymentService:
                     should_dispatch_side_effects = True
                 if order.payment_channel is None:
                     order.payment_channel = payload.channel
+                await ensure_pickup_code(order, self._session, self._settings)
 
                 payment_record_stmt = self._build_payment_record_insert(
                     order_id=order.order_id,
@@ -181,7 +183,9 @@ class PaymentService:
                         print_job = await self._session.get(PrintJob, inserted_job_id)
                         created_new_job = True
                     else:
-                        select_job_stmt = select(PrintJob).where(PrintJob.order_id == order.order_id)
+                        select_job_stmt = select(PrintJob).where(
+                            PrintJob.order_id == order.order_id
+                        )
                         if dialect_name != "sqlite":
                             select_job_stmt = select_job_stmt.with_for_update()
                         job_result = await self._session.execute(select_job_stmt)
@@ -221,8 +225,8 @@ class PaymentService:
                         if job_id_from_existing is not None:
                             await self._session.execute(
                                 update(PrintJob)
-                                    .where(PrintJob.job_id == job_id_from_existing)
-                                    .values(next_try_at=now_utc)
+                                .where(PrintJob.job_id == job_id_from_existing)
+                                .values(next_try_at=now_utc)
                             )
 
                 if record_inserted:
@@ -334,11 +338,15 @@ class PaymentService:
         dialect_name = bind.dialect.name if bind is not None else ""
 
         if dialect_name == "postgresql":
-            return pg_insert(PaymentRecord).values(**values).on_conflict_do_nothing(
-                index_elements=[PaymentRecord.txn_id]
+            return (
+                pg_insert(PaymentRecord)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=[PaymentRecord.txn_id])
             )
         if dialect_name == "sqlite":
-            return sqlite_insert(PaymentRecord).values(**values).on_conflict_do_nothing(
-                index_elements=[PaymentRecord.txn_id]
+            return (
+                sqlite_insert(PaymentRecord)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=[PaymentRecord.txn_id])
             )
         return insert(PaymentRecord).values(**values)

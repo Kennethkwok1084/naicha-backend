@@ -7,10 +7,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.util import CommandError
-from app.core.settings import get_settings
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from app.core.settings import get_settings
 
 TEST_DB_NAME = "naicha_test"
 
@@ -23,7 +24,7 @@ async def test_alembic_upgrade_and_downgrade_cycle() -> None:
 
     test_async_url = base_async_url.set(database=TEST_DB_NAME)
     test_sync_url = base_sync_url.set(database=TEST_DB_NAME, drivername="postgresql")
-    
+
     # 确保同步 URL 也携带 sslmode 参数(与异步 URL 保持一致)
     if "sslmode=" in str(base_async_url) and "sslmode=" not in str(test_sync_url):
         # 从异步 URL 提取 sslmode

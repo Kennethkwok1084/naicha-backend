@@ -12,7 +12,11 @@ class UserService:
         self._session = session
 
     async def list_addresses(self, user_id: int) -> list[UserAddress]:
-        stmt = select(UserAddress).where(UserAddress.user_id == user_id).order_by(UserAddress.created_at)
+        stmt = (
+            select(UserAddress)
+            .where(UserAddress.user_id == user_id)
+            .order_by(UserAddress.created_at)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars())
 
@@ -86,7 +90,9 @@ class UserService:
 
         if was_default:
             fallback = await self._session.execute(
-                select(UserAddress).where(UserAddress.user_id == user_id).order_by(UserAddress.created_at)
+                select(UserAddress)
+                .where(UserAddress.user_id == user_id)
+                .order_by(UserAddress.created_at)
             )
             replacement = fallback.scalars().first()
             if replacement:

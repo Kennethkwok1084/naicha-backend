@@ -68,9 +68,7 @@ class ReservationService:
         lead_minutes = max(self._settings.reservation_reminder_minutes, 5)
         min_allowed = local_now + timedelta(minutes=lead_minutes)
         if local_target < min_allowed:
-            raise ReservationValidationError(
-                f"预约时间需至少提前 {lead_minutes} 分钟。"
-            )
+            raise ReservationValidationError(f"预约时间需至少提前 {lead_minutes} 分钟。")
 
         slot_minutes = max(self._settings.reservation_slot_granularity_minutes, 5)
         slot_start_local = self._floor_to_slot(local_target, slot_minutes)
@@ -244,7 +242,9 @@ class ReservationService:
             return target
 
         # 尝试当天剩余档期
-        for start, end in ReservationService._iter_ranges_for_weekday(open_hours, target.isoweekday()):
+        for start, end in ReservationService._iter_ranges_for_weekday(
+            open_hours, target.isoweekday()
+        ):
             start_dt = datetime.combine(target.date(), start, tzinfo=tz)
             end_dt = datetime.combine(target.date(), end, tzinfo=tz)
             if target <= end_dt:
@@ -259,7 +259,9 @@ class ReservationService:
         return None
 
     @staticmethod
-    def _iter_ranges_for_weekday(open_hours: Iterable[dict], weekday: int) -> list[tuple[time, time]]:
+    def _iter_ranges_for_weekday(
+        open_hours: Iterable[dict], weekday: int
+    ) -> list[tuple[time, time]]:
         ranges: list[tuple[time, time]] = []
         entries = list(open_hours or [])
         for entry in entries:

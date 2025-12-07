@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import get_current_user, get_current_user_optional
+from app.api.dependencies.auth import get_current_user_optional
 from app.core.rate_limiter import limiter
 from app.core.settings import get_settings
 from app.db.session import get_async_session
@@ -198,6 +198,40 @@ async def initiate_jsapi_payment(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     return OrderPaymentInitiateResponseSchema(**result)
+
+
+@router.post(
+    "/{order_id}/cancel",
+    response_model=OrderResponseSchema,
+    summary="取消订单",
+)
+@limiter.limit("100/minute")
+async def cancel_order(
+    request: Request,
+    response: Response,
+    order_id: int,
+    service: OrderService = Depends(get_order_service),
+    current_user=Depends(get_current_user_optional),
+    guest_session_id: str | None = Query(
+        default=None,
+        description="访客会话 ID (用于访客取消订单)",
+    ),
+) -> OrderResponseSchema:
+    """取消订单 (仅待支付状态)"""
+    try:
+        result = await service.cancel_order(
+            order_id=order_id,
+            actor=current_user,
+            guest_session_id=guest_session_id,
+        )
+    except OrderNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except OrderOwnershipError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except OrderConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return OrderResponseSchema(**result)
 
 
 @router.post(

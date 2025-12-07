@@ -1,21 +1,31 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+import hmac
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.security import TokenScope, create_access_token
 from app.core.settings import get_settings
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import User
-from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
-from app.models.orders import IdempotencyKey
+from app.models.catalog import (
+    Category,
+    Product,
+    ProductSpecMapping,
+    SpecGroup,
+    SpecOption,
+)
+from app.models.orders import IdempotencyKey, Order, OrderItem
 from app.models.shop import ShopProfile
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from app.schemas import WechatPaymentNotifySchema
+from app.services.payments import PaymentService
 
 
 async def _seed_product(db_session) -> None:
@@ -69,10 +79,18 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                     "Idempotency-Key": "idem-api-1",
                 },
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                        {
+                            "product_id": 101,
+                            "quantity": 1,
+                            "selected_specs": [
+                                {"spec_id": 101, "option_id": 101, "option_name": "珍珠"}
+                            ],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "无糖",
                 },
             )
@@ -82,11 +100,12 @@ async def test_create_order_api_with_user_token(db_session) -> None:
             assert payload["order_type"] == "pickup"
             assert payload["total_price"] == 17.0
             assert payload["items"][0]["product_id"] == 101
-            assert payload["pickup_code"]
+            assert payload["pickup_code"] is None
             assert payload["eta_minutes"] >= 1
             assert payload["eta_text"]
 
             order_id = payload["order_id"]
+            order_number = payload["order_number"]
 
             jsapi_resp = await client.post(
                 f"/api/v1/orders/{order_id}/pay/jsapi",
@@ -112,30 +131,69 @@ async def test_create_order_api_with_user_token(db_session) -> None:
                     "Idempotency-Key": "idem-api-1",
                 },
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                        {
+                            "product_id": 101,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 101, "option_id": 101}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "无糖",
                 },
             )
             assert second.status_code == 201
             assert second.json()["order_id"] == order_id
 
-            detail = await client.get(
+            detail_before = await client.get(
                 f"/api/v1/orders/{order_id}", headers={"Authorization": f"Bearer {token}"}
             )
-            assert detail.status_code == 200
-            assert detail.json()["order_id"] == order_id
+            assert detail_before.status_code == 200
+            assert detail_before.json()["pickup_code"] is None
+
+            settings = get_settings()
+            payment_service = PaymentService(db_session, settings)
+            payment_payload = WechatPaymentNotifySchema(
+                event_id="evt_api_paid",
+                order_number=order_number,
+                transaction_id="txn_api_1",
+                amount=17.0,
+                currency="CNY",
+                channel="wechat_jsapi",
+                status="SUCCESS",
+                paid_at=datetime.now(tz=UTC),
+            )
+            raw_body = payment_payload.model_dump_json().encode("utf-8")
+            signature = hmac.new(
+                settings.secret_key.encode("utf-8"), raw_body, "sha256"
+            ).hexdigest()
+            payment_result = await payment_service.handle_wechat_notification(
+                payment_payload, raw_body=raw_body, signature=signature
+            )
+            assert payment_result["status"] == "SUCCESS"
+
+            detail_after = await client.get(
+                f"/api/v1/orders/{order_id}", headers={"Authorization": f"Bearer {token}"}
+            )
+            assert detail_after.status_code == 200
+            assert detail_after.json()["pickup_code"]
 
             preview_resp = await client.post(
                 "/api/v1/orders/preview",
                 headers={"Authorization": f"Bearer {token}"},
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": 101, "quantity": 1, "spec_option_ids": [101]},
+                        {
+                            "product_id": 101,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 101, "option_id": 101}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "无糖",
                 },
             )
@@ -208,10 +266,16 @@ async def test_create_order_api_idempotency_under_concurrency(model_test_engine)
                     "Idempotency-Key": f"idem-concurrent-{idx}",
                 },
                 json={
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
                     "items": [
-                        {"product_id": PRODUCT_ID, "quantity": 1, "spec_option_ids": [SPEC_OPTION_ID]},
+                        {
+                            "product_id": PRODUCT_ID,
+                            "quantity": 1,
+                            "selected_specs": [{"spec_id": 503, "option_id": SPEC_OPTION_ID}],
+                        },
                     ],
-                    "order_type": "pickup",
                     "notes": "并发下单",
                 },
             )
@@ -248,8 +312,10 @@ async def test_create_order_api_requires_guest_session(db_session) -> None:
                 "/api/v1/orders",
                 headers={"Idempotency-Key": "idem-guest-1"},
                 json={
-                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
-                    "order_type": "pickup",
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
+                    "items": [{"product_id": 101, "quantity": 1, "selected_specs": []}],
                 },
             )
             assert without_session.status_code == 400
@@ -258,8 +324,10 @@ async def test_create_order_api_requires_guest_session(db_session) -> None:
                 "/api/v1/orders",
                 headers={"Idempotency-Key": "idem-guest-2"},
                 json={
-                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
-                    "order_type": "pickup",
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
+                    "items": [{"product_id": 101, "quantity": 1, "selected_specs": []}],
                     "guest_session_id": "gs-test",
                 },
             )
@@ -305,8 +373,10 @@ async def test_create_order_api_reservation_success(db_session) -> None:
                     "Idempotency-Key": "idem-reservation-api",
                 },
                 json={
-                    "items": [{"product_id": 101, "quantity": 1, "spec_option_ids": []}],
-                    "order_type": "pickup",
+                    "shop_id": 1,
+                    "delivery_type": "pickup",
+                    "user_phone": "13800000000",
+                    "items": [{"product_id": 101, "quantity": 1, "selected_specs": []}],
                     "scheduled_at": scheduled_local.isoformat(),
                 },
             )
@@ -317,4 +387,267 @@ async def test_create_order_api_reservation_success(db_session) -> None:
         assert payload["scheduled_at"].endswith("Z") or payload["scheduled_at"].endswith("+00:00")
     finally:
         settings.reservation_enabled = original_flag
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_success(db_session) -> None:
+    """测试用户成功取消待支付订单"""
+    await _seed_product(db_session)
+    user = User(user_id=800, open_id="user-cancel")
+    db_session.add(user)
+    await db_session.flush()
+
+    # 创建待支付订单
+    order = Order(
+        order_id=9200,
+        order_number="TEST-CANCEL-1",
+        user_id=user.user_id,
+        total_price=17,
+        status="pending_payment",
+        order_type="pickup",
+        payment_status="pending",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(),
+        pickup_code="999888",
+    )
+    item = OrderItem(
+        item_id=9201,
+        order_id=order.order_id,
+        product_id=101,
+        product_name="桂花乌龙",
+        quantity=1,
+        unit_price=17,
+        selected_specs_json=[{"spec_id": 101, "option_id": 101, "option_name": "珍珠"}],
+    )
+    db_session.add_all([order, item])
+    await db_session.flush()
+
+    token = create_access_token(subject=str(user.user_id), scope=TokenScope.USER)
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/orders/{order.order_id}/cancel",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "cancelled"
+        assert payload["order_id"] == order.order_id
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_not_found(db_session) -> None:
+    """测试取消不存在的订单"""
+    user = User(user_id=801, open_id="user-cancel-404")
+    db_session.add(user)
+    await db_session.flush()
+
+    token = create_access_token(subject=str(user.user_id), scope=TokenScope.USER)
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/orders/99999/cancel",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 404
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_not_owner(db_session) -> None:
+    """测试取消不属于自己的订单"""
+    user1 = User(user_id=802, open_id="user-owner-1")
+    user2 = User(user_id=803, open_id="user-owner-2")
+    db_session.add_all([user1, user2])
+    await db_session.flush()
+
+    order = Order(
+        order_id=9210,
+        order_number="TEST-CANCEL-OWNER",
+        user_id=user1.user_id,
+        total_price=10,
+        status="pending_payment",
+        order_type="pickup",
+        payment_status="pending",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(),
+        pickup_code="888777",
+    )
+    item = OrderItem(
+        item_id=9211,
+        order_id=order.order_id,
+        product_id=1,
+        product_name="测试",
+        quantity=1,
+        unit_price=10,
+        selected_specs_json=[],
+    )
+    db_session.add_all([order, item])
+    await db_session.flush()
+
+    token = create_access_token(subject=str(user2.user_id), scope=TokenScope.USER)
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/orders/{order.order_id}/cancel",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 403
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_already_paid(db_session) -> None:
+    """测试取消已支付订单(应失败)"""
+    user = User(user_id=804, open_id="user-cancel-paid")
+    db_session.add(user)
+    await db_session.flush()
+
+    order = Order(
+        order_id=9220,
+        order_number="TEST-CANCEL-PAID",
+        user_id=user.user_id,
+        total_price=10,
+        status="paid",
+        order_type="pickup",
+        payment_status="paid",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(),
+        pickup_code="777666",
+    )
+    item = OrderItem(
+        item_id=9221,
+        order_id=order.order_id,
+        product_id=1,
+        product_name="测试",
+        quantity=1,
+        unit_price=10,
+        selected_specs_json=[],
+    )
+    db_session.add_all([order, item])
+    await db_session.flush()
+
+    token = create_access_token(subject=str(user.user_id), scope=TokenScope.USER)
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/orders/{order.order_id}/cancel",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 409
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_as_guest(db_session) -> None:
+    """测试游客取消订单"""
+    order = Order(
+        order_id=9230,
+        order_number="TEST-CANCEL-GUEST",
+        user_id=None,
+        guest_session_id="guest_session_abc",
+        total_price=10,
+        status="pending_payment",
+        order_type="pickup",
+        payment_status="pending",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(),
+        pickup_code="666555",
+    )
+    item = OrderItem(
+        item_id=9231,
+        order_id=order.order_id,
+        product_id=1,
+        product_name="测试",
+        quantity=1,
+        unit_price=10,
+        selected_specs_json=[],
+    )
+    db_session.add_all([order, item])
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 正确的 guest_session_id
+            response = await client.post(
+                f"/api/v1/orders/{order.order_id}/cancel?guest_session_id=guest_session_abc",
+            )
+            assert response.status_code == 200
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_guest_session_mismatch(db_session) -> None:
+    """测试游客会话不匹配"""
+    order = Order(
+        order_id=9240,
+        order_number="TEST-CANCEL-GUEST-MISMATCH",
+        user_id=None,
+        guest_session_id="guest_session_xyz",
+        total_price=10,
+        status="pending_payment",
+        order_type="pickup",
+        payment_status="pending",
+        source="user",
+        is_scheduled=False,
+        created_at=datetime.now(),
+        pickup_code="555444",
+    )
+    item = OrderItem(
+        item_id=9241,
+        order_id=order.order_id,
+        product_id=1,
+        product_name="测试",
+        quantity=1,
+        unit_price=10,
+        selected_specs_json=[],
+    )
+    db_session.add_all([order, item])
+    await db_session.flush()
+
+    app.dependency_overrides[get_async_session] = lambda: db_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 错误的 guest_session_id
+            response = await client.post(
+                f"/api/v1/orders/{order.order_id}/cancel?guest_session_id=wrong_session",
+            )
+            assert response.status_code == 403
+
+    finally:
         app.dependency_overrides.pop(get_async_session, None)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.api.routes.config import get_config_service
 from app.core.settings import get_settings
 from app.db.session import get_async_session
@@ -10,7 +12,6 @@ from app.main import app
 from app.models.accounts import Admin
 from app.models.shop import ShopConfig
 from app.services.config import ConfigService
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

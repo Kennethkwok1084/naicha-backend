@@ -1,4 +1,0 @@
-增加 schemathesis 开发依赖并在 Makefile 中新增 contract-test 目标，自动启动 Uvicorn（使用 SQLite in-memory 配置）后执行 schemathesis run，限制为示例阶段、每个接口 5 个样本
-    （Makefile:38，requirements-dev.txt:11）。
-  - 在 CI workflow 中于常规测试之后追加 “Run Contract Tests” 步骤，复用虚拟环境执行 make contract-test（.github/workflows/ci.yml:37）。
-  - 手动跑通 PYTHON=.venv/bin/python make contract-test 验证合同测试流程可用。

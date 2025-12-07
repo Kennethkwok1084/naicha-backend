@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import pytest
-from app.core.rate_limiter import init_rate_limiter, limiter
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
+
+from app.core.rate_limiter import init_rate_limiter, limiter
 
 
 @pytest.mark.asyncio

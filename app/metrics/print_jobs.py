@@ -5,7 +5,9 @@ from prometheus_client import Counter, Histogram
 PRINT_JOB_TOTAL = Counter(
     "print_job_total",
     "打印任务执行结果计数。",
-    ["result"],  # success, missing, already_done, retry_limit, retry_scheduled, non_retryable_failure
+    [
+        "result"
+    ],  # success, missing, already_done, retry_limit, retry_scheduled, non_retryable_failure
 )
 
 PRINT_JOB_RETRY_COUNT = Histogram(

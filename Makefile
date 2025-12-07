@@ -28,7 +28,7 @@ dev:
 	$(UVICORN) app.main:app --reload --host 0.0.0.0 --port 8000
 
 worker:
-	celery -A app.workers.celery_app:celery_app worker --loglevel=info
+	celery -A app.workers.celery_app:celery_app worker -Q analytics,default,print_jobs --loglevel=info
 
 migrate:
 	alembic revision --autogenerate -m "describe changes"
@@ -116,6 +116,14 @@ seed-perf:
 	@$(PYTHON) scripts/seed_perf_data.py
 	@echo ""
 	@echo "✅ 性能测试数据创建完成！"
+
+fix-sequences:
+	@echo "=========================================="
+	@echo "修复数据库序列不同步问题"
+	@echo "=========================================="
+	@$(PYTHON) scripts/fix_sequence.py
+	@echo ""
+	@echo "✅ 序列修复完成！"
 
 # ============================================
 # 上线验证相关命令

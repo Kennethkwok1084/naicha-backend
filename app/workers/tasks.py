@@ -165,9 +165,7 @@ def run_print_job_recovery(limit: int = 50) -> None:
     lock_name = "celery:lock:print_job_recovery"
     should_run, lock, _ = _acquire_task_lock(lock_name, settings.print_recovery_interval_seconds)
     if not should_run:
-        logger.info(
-            "celery.task_skipped_due_to_lock", extra={"task": "run_print_job_recovery"}
-        )
+        logger.info("celery.task_skipped_due_to_lock", extra={"task": "run_print_job_recovery"})
         _observe_task_runtime("run_print_job_recovery", started_at)
         return
     try:
@@ -362,13 +360,13 @@ async def _run_daily_reconciliation() -> None:
     RECONCILIATION_DIFF_GAUGE.labels(type="orders_without_refund").set(
         len(result.orders_without_refund)
     )
-    RECONCILIATION_DIFF_GAUGE.labels(type="unmatched_payments").set(
-        len(result.unmatched_payments)
-    )
+    RECONCILIATION_DIFF_GAUGE.labels(type="unmatched_payments").set(len(result.unmatched_payments))
 
 
 async def _cancel_stale_pending_orders(*, limit: int) -> None:
-    cutoff = datetime.now(tz=UTC) - timedelta(minutes=max(settings.order_pending_timeout_minutes, 1))
+    cutoff = datetime.now(tz=UTC) - timedelta(
+        minutes=max(settings.order_pending_timeout_minutes, 1)
+    )
     async with async_session_factory() as session:
         service = OrderService(session, settings)
         async with session.begin():
@@ -448,3 +446,174 @@ def _build_payment_broadcast_payload(order: Order) -> dict[str, Any] | None:
             "paid_at": paid_at.isoformat(),
         },
     }
+
+
+# ============================================================================
+# 用户行为分析埋点任务
+# ============================================================================
+
+
+@celery_app.task(
+    name="app.workers.tasks.batch_ingest_analytics_events",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+    acks_late=True,  # 任务级别可靠性配置：执行完才确认
+    reject_on_worker_lost=True,  # Worker异常退出时拒绝任务
+)
+def batch_ingest_analytics_events(
+    self,
+    events_data: list[dict[str, Any]],
+):
+    """
+    批量接收埋点事件并入库
+
+    优化点:
+    - API层打包整批事件投递,减少broker往返
+    - Worker端拆分并批量插入,利用PostgreSQL批量性能
+    - ON CONFLICT DO NOTHING 实现幂等
+    - acks_late=True 确保任务失败自动重试
+
+    Args:
+        events_data: 事件列表,每个事件包含:
+            - event_id: UUID字符串
+            - user_id: 用户ID(可为None)
+            - session_id: 会话标识
+            - event_type: 事件类型
+            - event_name: 事件名称
+            - event_timestamp_ms: Unix毫秒时间戳
+            - payload: 自定义属性字典
+    """
+    import asyncio
+
+    from app.metrics.analytics import ANALYTICS_EVENTS_FAILED_TOTAL
+
+    try:
+        asyncio.run(_batch_insert_analytics_events_async(events_data))
+    except Exception as exc:
+        logger.error(
+            "analytics.batch_insert_failed",
+            error=str(exc),
+            event_count=len(events_data),
+            exc_info=True,
+        )
+        ANALYTICS_EVENTS_FAILED_TOTAL.inc()
+
+        # 自动重试机制
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+
+        # 重试耗尽,记录到死信(日志已记录,不再抛出)
+        logger.critical(
+            "analytics.batch_insert_exhausted",
+            error=str(exc),
+            event_count=len(events_data),
+            retries=self.request.retries,
+        )
+
+
+async def _batch_insert_analytics_events_async(events_data: list[dict[str, Any]]):
+    """
+    异步批量插入埋点事件到数据库
+
+    使用 ON CONFLICT DO NOTHING 实现幂等:
+    - 重复的event_id会被自动跳过
+    - 不影响批量插入的其他事件
+    - 统计重复率用于监控客户端行为
+    """
+    from uuid import UUID
+
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.metrics.analytics import (
+        ANALYTICS_BATCH_INSERT_DURATION_SECONDS,
+        ANALYTICS_BATCH_SIZE,
+        ANALYTICS_EVENTS_DUPLICATES_TOTAL,
+        ANALYTICS_EVENTS_INSERTED_TOTAL,
+    )
+    from app.models.analytics import AnalyticsEvent
+
+    if not events_data:
+        return
+
+    # 记录批量大小
+    ANALYTICS_BATCH_SIZE.observe(len(events_data))
+
+    # 转换为数据库模型数据
+    db_events = []
+    for event in events_data:
+        db_events.append(
+            {
+                "event_id": UUID(event["event_id"]),
+                "user_id": event.get("user_id"),
+                "session_id": event.get("session_id"),
+                "event_type": event["event_type"],
+                "event_name": event["event_name"],
+                "event_timestamp": datetime.fromtimestamp(
+                    event["event_timestamp_ms"] / 1000, tz=UTC
+                ),
+                "payload": event.get("payload"),
+            }
+        )
+
+    # 先统计各事件类型的数量（用于指标上报）
+    event_type_counts: dict[str, int] = {}
+    for event in events_data:
+        event_type = event["event_type"]
+        event_type_counts[event_type] = event_type_counts.get(event_type, 0) + 1
+
+    # 批量插入(带计时)
+    start_time = time.time()
+    async with async_session_factory() as session:
+        try:
+            stmt = insert(AnalyticsEvent).values(db_events)
+            stmt = stmt.on_conflict_do_nothing(index_elements=["event_id"])
+
+            result = await session.execute(stmt)
+            await session.commit()
+
+            inserted = result.rowcount
+            duplicates = len(db_events) - inserted
+
+            # 按事件类型统计插入成功数
+            # 注意: ON CONFLICT DO NOTHING 无法精确返回哪些行被插入
+            # 当 duplicates=0 时所有事件都成功，可精确统计
+            # 当 duplicates>0 时使用比例分配作为近似值
+            if inserted > 0:
+                if duplicates == 0:
+                    # 所有事件都成功插入，可精确统计
+                    for event_type, count in event_type_counts.items():
+                        ANALYTICS_EVENTS_INSERTED_TOTAL.labels(event_type=event_type).inc(count)
+                else:
+                    # 存在重复，按比例分配（近似统计）
+                    total_events = len(events_data)
+                    for event_type, count in event_type_counts.items():
+                        estimated_inserted = int(count * inserted / total_events)
+                        if estimated_inserted > 0:
+                            ANALYTICS_EVENTS_INSERTED_TOTAL.labels(event_type=event_type).inc(
+                                estimated_inserted
+                            )
+
+            if duplicates > 0:
+                ANALYTICS_EVENTS_DUPLICATES_TOTAL.inc(duplicates)
+
+            duration = time.time() - start_time
+            ANALYTICS_BATCH_INSERT_DURATION_SECONDS.observe(duration)
+
+            logger.info(
+                "analytics.batch_inserted",
+                total=len(db_events),
+                inserted=inserted,
+                duplicates=duplicates,
+                duration_ms=int(duration * 1000),
+            )
+
+        except Exception as exc:
+            await session.rollback()
+            logger.error(
+                "analytics.db_insert_error",
+                error=str(exc),
+                event_count=len(db_events),
+                exc_info=True,
+            )
+            raise

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+
 from app.api.dependencies import auth as auth_dependencies
 from app.core.security import TokenScope, create_access_token, hash_password
 from app.models.accounts import Admin, User
-from fastapi import HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 
 
 def _credential(token: str) -> HTTPAuthorizationCredentials:

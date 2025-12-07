@@ -3,19 +3,20 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.schemas import OrderCreateRequestSchema, OrderItemCreateSchema
 from app.services.orders import OrderService, OrderValidationError
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_product(session, *, stock: int) -> None:
     category = Category(category_id=901, name="并发测试奶茶", sort_order=1)
     session.add(category)
     await session.flush()
-    
+
     product = Product(
         product_id=901,
         category_id=category.category_id,
@@ -27,10 +28,10 @@ async def _seed_product(session, *, stock: int) -> None:
         stock_quantity=stock,
     )
     session.add(product)
-    
+
     group = SpecGroup(group_id=901, name="规格", sort_order=1)
     session.add(group)
-    
+
     option = SpecOption(
         option_id=901,
         group_id=group.group_id,
@@ -41,7 +42,7 @@ async def _seed_product(session, *, stock: int) -> None:
     )
     session.add(option)
     await session.flush()
-    
+
     mapping = ProductSpecMapping(
         mapping_id=901,
         product_id=product.product_id,
@@ -71,7 +72,9 @@ async def test_concurrent_order_creation_respects_stock(model_test_engine) -> No
             service = OrderService(session, settings)
             payload = OrderCreateRequestSchema(
                 items=[OrderItemCreateSchema(product_id=901, quantity=1, spec_option_ids=[901])],
+                shop_id=1,
                 order_type="pickup",
+                user_phone="13800000000",
             )
             try:
                 return await service.create_order(

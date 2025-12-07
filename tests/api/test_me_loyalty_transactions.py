@@ -1,9 +1,10 @@
 """积分交易记录 API 测试"""
 
 import pytest
-from app.models.accounts import LoyaltyTransaction, User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.accounts import LoyaltyTransaction, User
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product
@@ -38,7 +39,10 @@ async def test_reservation_flow_end_to_end(db_session) -> None:
             id=1,
             timezone="Asia/Shanghai",
             open_hours_json=[
-                {"weekday": datetime.now(ZoneInfo("Asia/Shanghai")).isoweekday(), "ranges": [["08:00", "22:00"]]}
+                {
+                    "weekday": datetime.now(ZoneInfo("Asia/Shanghai")).isoweekday(),
+                    "ranges": [["08:00", "22:00"]],
+                }
             ],
         )
         db_session.add(profile)
@@ -50,10 +54,14 @@ async def test_reservation_flow_end_to_end(db_session) -> None:
         order_service = OrderService(db_session, settings)
         scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=2)
         create_payload = OrderCreateRequestSchema(
-            items=[OrderItemCreateSchema(product_id=product.product_id, quantity=1, spec_option_ids=[])],
+            items=[
+                OrderItemCreateSchema(product_id=product.product_id, quantity=1, spec_option_ids=[])
+            ],
+            shop_id=1,
             order_type="pickup",
             scheduled_at=scheduled_local,
             notes="预约E2E",
+            user_phone="13800000000",
         )
 
         created = await order_service.create_order(

@@ -17,6 +17,7 @@ from app.schemas import (
     AdminPaymentMatchRequestSchema,
     AdminPaymentMatchResponseSchema,
 )
+from app.services.pickup_code import ensure_pickup_code
 from app.utils.distributed_lock import distributed_lock
 from app.workers import enqueue_payment_side_effects, enqueue_print_job
 
@@ -61,12 +62,12 @@ class PaymentMatchService:
         user_agent: str | None,
     ) -> AdminPaymentMatchResponseSchema:
         """执行静态码支付匹配,使用分布式锁防止并发冲突。
-        
+
         锁策略:
         1. 若提供 transaction_id,锁定该交易记录 (防止重复匹配同一笔支付)
         2. 若未提供 transaction_id 但有 qr_session_id,锁定该 QR 会话 (防止同一静态码并发匹配)
         3. 否则锁定 (amount, time_window) 组合 (防止金额+时间窗口冲突)
-        
+
         失败降级: Redis 不可用时记录错误日志并抛出 503,拒绝处理以保证数据一致性。
         """
         paid_at = self._ensure_timezone(payload.paid_at)
@@ -192,6 +193,7 @@ class PaymentMatchService:
             order.payment_status = "paid"
             order.payment_channel = "static_qr"
             order.updated_at = datetime.now(tz=UTC)
+            await ensure_pickup_code(order, self._session, self._settings)
 
             print_job = await self._ensure_print_job(order)
             if print_job is not None and print_job.status in {"pending", "failed"}:
@@ -268,7 +270,9 @@ class PaymentMatchService:
                     match_status="unmatched",
                     paid_at=self._ensure_timezone(payload.paid_at),
                     qr_session_id=payload.qr_session_id,
-                    raw_notification_json={"trace_id": payload.trace_id} if payload.trace_id else None,
+                    raw_notification_json=(
+                        {"trace_id": payload.trace_id} if payload.trace_id else None
+                    ),
                 )
                 self._session.add(record)
                 await self._session.flush()
@@ -370,7 +374,9 @@ class PaymentMatchService:
         return value.astimezone(UTC)
 
     @staticmethod
-    def _build_candidate_schema(order: Order, paid_at: datetime) -> AdminPaymentMatchCandidateSchema:
+    def _build_candidate_schema(
+        order: Order, paid_at: datetime
+    ) -> AdminPaymentMatchCandidateSchema:
         reference_time = order.updated_at or order.created_at or datetime.now(tz=UTC)
         reference_time = PaymentMatchService._ensure_timezone(reference_time)
         paid_at = PaymentMatchService._ensure_timezone(paid_at)

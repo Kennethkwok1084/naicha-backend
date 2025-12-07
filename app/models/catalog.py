@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, event
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.orm.attributes import NO_VALUE
 
-from app.db.base import Base, CreatedAtMixin, TimestampMixin, BIGINT_PK
+from app.db.base import BIGINT_PK, Base, CreatedAtMixin, TimestampMixin
 
 
 class Category(Base, CreatedAtMixin):
@@ -147,9 +157,7 @@ def _product_status_change(target: Product, value: str, oldvalue: str, initiator
 
 
 @event.listens_for(SpecOption.inventory_status, "set", retval=True)
-def _spec_option_inventory_status_change(
-    target: SpecOption, value: str, oldvalue: str, initiator
-):
+def _spec_option_inventory_status_change(target: SpecOption, value: str, oldvalue: str, initiator):
     if oldvalue is NO_VALUE or value == oldvalue:
         return value
     _invalidate_menu_cache()

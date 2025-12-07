@@ -39,13 +39,27 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
 
 async def validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
     message = "Request validation failed."
+    # Serialize error objects to avoid "Object of type ValueError is not JSON serializable"
+    errors = []
+    for err in exc.errors():
+        serialized_err = {
+            "type": err.get("type"),
+            "loc": err.get("loc"),
+            "msg": err.get("msg"),
+            "input": err.get("input"),
+        }
+        # Convert ctx values to strings if present
+        if err.get("ctx"):
+            serialized_err["ctx"] = {k: str(v) for k, v in err["ctx"].items()}
+        errors.append(serialized_err)
+
     content = _build_error_payload(
         message,
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
-        extra={"details": exc.errors()},
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        extra={"details": errors},
     )
     content["detail"] = message
-    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=content)
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=content)
 
 
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:

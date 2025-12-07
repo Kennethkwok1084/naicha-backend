@@ -41,7 +41,9 @@ class ShopStatusSchema(BaseModel):
     location: ShopLocationSchema | None = None
     features: ShopFeaturesSchema
     # 今日营业时间可读文案
-    business_hours_today: str | None = Field(default=None, description="今日营业时间文案，如'营业中 09:00-21:00'")
+    business_hours_today: str | None = Field(
+        default=None, description="今日营业时间文案，如'营业中 09:00-21:00'"
+    )
 
 
 class DeliveryCheckRequestSchema(BaseModel):

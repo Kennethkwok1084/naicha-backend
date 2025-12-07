@@ -3,14 +3,15 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import Admin, User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.orders import AuditLog, Order, PrintJob
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 
 async def _seed_menu(db_session) -> None:
@@ -92,9 +93,7 @@ async def test_pos_order_cash_success(db_session) -> None:
     assert order.created_by_admin_id == admin.admin_id
     assert order.status == "paid"
 
-    jobs = await db_session.execute(
-        select(PrintJob).where(PrintJob.order_id == order.order_id)
-    )
+    jobs = await db_session.execute(select(PrintJob).where(PrintJob.order_id == order.order_id))
     job_records = list(jobs.scalars())
     assert len(job_records) == 1
     assert job_records[0].job_id == payload["print_job_id"]

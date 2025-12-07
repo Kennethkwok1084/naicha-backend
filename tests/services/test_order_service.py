@@ -7,6 +7,8 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.models.accounts import Coupon, User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
@@ -26,7 +28,6 @@ from app.services.orders import (
     OrderService,
     OrderValidationError,
 )
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_menu(db_session):
@@ -50,7 +51,9 @@ async def _seed_menu(db_session):
         inventory_status="in_stock",
         sort_order=1,
     )
-    mapping = ProductSpecMapping(mapping_id=1, product_id=product.product_id, group_id=group.group_id)
+    mapping = ProductSpecMapping(
+        mapping_id=1, product_id=product.product_id, group_id=group.group_id
+    )
 
     db_session.add_all([category, product, group, option, mapping])
     await db_session.flush()
@@ -68,8 +71,10 @@ async def test_create_order_with_idempotency(db_session) -> None:
         items=[
             OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1]),
         ],
+        shop_id=1,
         order_type="pickup",
         notes="少冰",
+        user_phone="13800000000",
     )
 
     first = await service.create_order(payload=payload, idempotency_key="idem-001", user=user)
@@ -98,8 +103,10 @@ async def test_create_order_idempotency_race_condition(model_test_engine) -> Non
 
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
         notes="race",
+        user_phone="13800000000",
     )
 
     async def create_once():
@@ -139,7 +146,9 @@ async def test_create_order_deducts_product_stock(db_session) -> None:
 
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
     result = await service.create_order(payload=payload, idempotency_key="stock-1", user=user)
     assert result["order_id"] > 0
@@ -150,7 +159,9 @@ async def test_create_order_deducts_product_stock(db_session) -> None:
 
     payload_second = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
     await service.create_order(payload=payload_second, idempotency_key="stock-2", user=user)
     await db_session.refresh(product)
@@ -159,7 +170,9 @@ async def test_create_order_deducts_product_stock(db_session) -> None:
 
     payload_third = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
     with pytest.raises(OrderValidationError):
         await service.create_order(payload=payload_third, idempotency_key="stock-3", user=user)
@@ -172,7 +185,9 @@ async def test_create_order_requires_guest_session(db_session) -> None:
 
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
 
     with pytest.raises(OrderValidationError):
@@ -190,7 +205,9 @@ async def test_initiate_payment_requires_owner(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
 
     order = await service.create_order(payload=payload, idempotency_key="idem-pay", user=user)
@@ -235,8 +252,10 @@ async def test_create_reservation_requires_flag(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        shop_id=1,
         order_type="pickup",
         scheduled_at=datetime.now(tz=UTC) + timedelta(hours=1),
+        user_phone="13800000000",
     )
 
     with pytest.raises(OrderValidationError):
@@ -250,7 +269,12 @@ async def test_create_reservation_order_success(db_session) -> None:
     profile = ShopProfile(
         id=1,
         timezone="Asia/Shanghai",
-        open_hours_json=[{"weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(), "ranges": [["08:00", "22:00"]]}],
+        open_hours_json=[
+            {
+                "weekday": datetime.now(tz=ZoneInfo("Asia/Shanghai")).isoweekday(),
+                "ranges": [["08:00", "22:00"]],
+            }
+        ],
     )
     db_session.add(profile)
     await db_session.flush()
@@ -267,8 +291,10 @@ async def test_create_reservation_order_success(db_session) -> None:
         scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=2)
         payload = OrderCreateRequestSchema(
             items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+            shop_id=1,
             order_type="pickup",
             scheduled_at=scheduled_local,
+            user_phone="13800000000",
         )
 
         result = await service.create_order(
@@ -320,8 +346,10 @@ async def test_reservation_slot_capacity_enforced(db_session) -> None:
         scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=3)
         payload = OrderCreateRequestSchema(
             items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+            shop_id=1,
             order_type="pickup",
             scheduled_at=scheduled_local,
+            user_phone="13800000000",
         )
 
         await service.create_order(
@@ -369,8 +397,10 @@ async def test_cancel_reservation_releases_slot(db_session) -> None:
         scheduled_local = datetime.now(tz=ZoneInfo("Asia/Shanghai")) + timedelta(hours=4)
         payload = OrderCreateRequestSchema(
             items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+            shop_id=1,
             order_type="pickup",
             scheduled_at=scheduled_local,
+            user_phone="13800000000",
         )
 
         created = await service.create_order(
@@ -419,7 +449,9 @@ async def test_create_order_holds_inventory_lock_until_commit(db_session) -> Non
 
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
 
     ready_event = asyncio.Event()
@@ -472,7 +504,9 @@ async def test_cancel_pending_order_restores_inventory(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
 
     created = await service.create_order(payload=payload, idempotency_key="idem-cancel", user=user)
@@ -501,7 +535,9 @@ async def test_cancel_stale_pending_orders_respects_cutoff(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCreateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[])],
+        shop_id=1,
         order_type="pickup",
+        user_phone="13800000000",
     )
     created = await service.create_order(payload=payload, idempotency_key="idem-stale", user=user)
 
@@ -525,6 +561,7 @@ async def test_calculate_price_basic_breakdown(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCalculateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
     )
 
@@ -547,6 +584,7 @@ async def test_calculate_price_applies_coupon_discount(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCalculateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
         coupon_id=coupon.coupon_id,
     )
@@ -569,6 +607,7 @@ async def test_calculate_price_applies_points_cap(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCalculateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=2, spec_option_ids=[1])],
+        shop_id=1,
         order_type="pickup",
         points_use=600,
     )
@@ -587,13 +626,15 @@ async def test_calculate_price_delivery_fee(db_session) -> None:
     service = OrderService(db_session, get_settings())
     payload = OrderCalculateRequestSchema(
         items=[OrderItemCreateSchema(product_id=1, quantity=1, spec_option_ids=[1])],
+        shop_id=1,
         order_type="delivery",
         address=OrderAddressSchema(
-            province="广东省",
-            city="深圳市",
-            district="南山区",
+            address="广东省深圳市南山区",
             detail="科技园",
+            name="张三",
+            phone="13800000000",
         ),
+        user_phone="13800000000",
     )
 
     result = await service.calculate_price_only(payload=payload, user=None)

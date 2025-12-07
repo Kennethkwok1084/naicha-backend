@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+
 from app.core.settings import get_settings
 from app.models.orders import Order
 from app.services.reservations import ReservationService
@@ -33,7 +34,11 @@ async def test_reservation_send_due_reminders(db_session) -> None:
         await db_session.flush()
 
         service = ReservationService(db_session, settings)
-        now = scheduled_at - timedelta(minutes=settings.reservation_reminder_minutes) + timedelta(minutes=1)
+        now = (
+            scheduled_at
+            - timedelta(minutes=settings.reservation_reminder_minutes)
+            + timedelta(minutes=1)
+        )
 
         order_ids = await service.send_due_reminders(now)
         assert order_ids == [order.order_id]

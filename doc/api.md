@@ -2,6 +2,222 @@
 
 创建或修改任何 API 时，请复制下列模板并更新对应字段。每个接口一次变更占用一个条目，按时间倒序追加到文档中。
 
+---
+
+## 最新变更
+
+### 微信小程序登录
+- **状态**：新增（日期：2025-11-29）
+- **路径/方法**：`POST /api/v1/users/login`
+- **权限**：公开
+- **幂等要求**：是（基于微信code的SHA256哈希防重放）
+- **限流**：10次/分钟/IP
+- **请求头**：无特殊要求
+- **请求体**：
+```json
+{
+  "code": "061abc7d0f2abc3d0f2abc3d0f2abc3d",
+  "nickname": "用户昵称",
+  "avatar_url": "https://thirdwx.qlogo.cn/..."
+}
+```
+- **字段说明**：
+  - `code`: 微信登录一次性code（必填）
+  - `nickname`: 用户昵称（可选，长度≤100，自动HTML转义和限长50）
+  - `avatar_url`: 用户头像URL（可选，长度≤500，必须http/https）
+- **响应体**：
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "user_id": 12345,
+  "is_new_user": true,
+  "token_type": "bearer",
+  "expires_in": 7200
+}
+```
+- **字段说明**：
+  - `access_token`: 访问令牌，有效期2小时（默认）
+  - `refresh_token`: 刷新令牌，有效期30天（默认）
+  - `user_id`: 用户ID
+  - `is_new_user`: 是否新注册用户
+  - `token_type`: 固定值"bearer"
+  - `expires_in`: access_token过期时间（秒）
+- **错误码**：
+  - 400 Bad Request - code已使用或无效
+  - 429 Too Many Requests - 超过限流阈值
+  - 500 Internal Server Error - 微信API调用失败
+- **副作用**：
+  1. 调用微信jscode2session获取openid/unionid/session_key
+  2. code哈希存入`wechat_used_codes`表防重放
+  3. 根据openid查询或创建用户记录
+  4. 更新用户昵称/头像/unionid（如提供）
+  5. 生成JWT token（包含user_id、openid、jti）
+- **token结构**：
+  - `sub`: 用户ID
+  - `scope`: "user"
+  - `openid`: 微信openid
+  - `jti`: JWT ID（用于黑名单踢下线）
+  - `exp`: 过期时间戳
+- **安全要求**：
+  - WECHAT_APPID/WECHAT_SECRET仅走环境变量
+  - session_key不记录日志、不返回前端
+  - code仅使用一次，SHA256哈希后存储
+  - IP级别限流10次/分钟
+
+### 绑定微信手机号
+- **状态**：新增（日期：2025-11-29）
+- **路径/方法**：`POST /api/v1/users/phone/bind`
+- **权限**：需要Bearer token认证
+- **幂等要求**：是（基于微信code的SHA256哈希防重放）
+- **限流**：5次/分钟/IP
+- **请求头**：
+  - `Authorization`: Bearer {access_token}（必填）
+- **请求体**：
+```json
+{
+  "code": "061abc7d0f2abc3d0f2abc3d0f2abc3d",
+  "guest_session_id": "guest_abc123"
+}
+```
+- **字段说明**：
+  - `code`: 微信手机号一次性code（必填）
+  - `guest_session_id`: 游客会话ID（可选，用于追踪转化来源）
+- **响应体**：
+```json
+{
+  "phone": "138****5678",
+  "from_guest_session": false,
+  "message": "手机号绑定成功"
+}
+```
+- **字段说明**：
+  - `phone`: 脱敏后的手机号
+  - `from_guest_session`: 是否从游客会话转换
+  - `message`: 结果消息
+- **错误码**：
+  - 400 Bad Request - code已使用或无效
+  - 401 Unauthorized - 未登录或token无效
+  - 429 Too Many Requests - 超过限流阈值
+  - 500 Internal Server Error - 微信API调用失败
+- **副作用**：
+  1. 验证当前用户token有效性
+  2. 调用微信API获取手机号（需access_token）
+  3. code哈希存入`wechat_used_codes`表防重放
+  4. 更新用户手机号字段
+- **安全要求**：
+  - 必须登录状态
+  - 手机号明文仅在日志中脱敏显示
+  - code仅使用一次
+  - IP级别限流5次/分钟
+
+### 批量上报用户行为埋点
+- **状态**：新增 （日期：2025-11-23）
+- **路径/方法**：`POST /api/v1/analytics/events`
+- **权限**：公开（可选JWT认证，匿名用户需X-Session-Id）
+- **幂等要求**：是（基于 `events[].id` UUID主键去重）
+- **限流**：100 req/min/IP（应用内 SlowAPI）
+- **请求头**：
+  - `X-Session-Id`: 会话标识（**匿名用户必填**）
+  - `Authorization`: Bearer token（可选）
+- **请求体**：
+```json
+{
+  "events": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "event",
+      "name": "add_to_cart",
+      "timestamp": 1700000000000,
+      "payload": {
+        "productId": 123,
+        "productName": "珍珠奶茶",
+        "quantity": 2,
+        "price": 15.0
+      }
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "type": "page",
+      "name": "page_view",
+      "timestamp": 1700000001000,
+      "payload": {
+        "path": "/pages/menu/index",
+        "referrer": "/pages/index/index",
+        "duration": 3500
+      }
+    }
+  ]
+}
+```
+- **字段说明**：
+  - `events[]`: 事件数组，**单次最多10条**
+  - `id`: UUID v4 唯一标识（前端生成）
+  - `type`: 事件类型 - `event`(操作) / `page`(页面) / `user`(用户属性)
+  - `name`: 事件名称（字母、数字、下划线、连字符组合，1-50字符）
+  - `timestamp`: Unix毫秒时间戳
+  - `payload`: 自定义事件属性（可选）
+    - 最多30个字段
+    - 总大小≤8KB（序列化后）
+    - 嵌套深度≤4层
+- **响应体**：`204 No Content`（空响应体）
+- **错误码**：
+  - 400 Bad Request - 匿名用户缺少 X-Session-Id
+  - 400 Bad Request - events 数组为空或超过10条
+  - 413 Payload Too Large - 请求体超过32KB
+  - 422 Unprocessable Entity - 事件格式校验失败
+    - payload 字段数量超过30个
+    - payload 总大小超过8KB
+    - payload 嵌套层级超过4层
+    - 事件名格式非法
+    - 批次内存在重复的事件ID
+  - 429 Too Many Requests - 超过限流阈值（100次/分钟）
+- **副作用**：
+  1. 事件整批投递到 Celery 队列（`analytics` 队列）
+  2. Worker 异步批量插入数据库（5秒内，`ON CONFLICT DO NOTHING`）
+  3. Prometheus 指标上报：
+     - `analytics_events_received_total{event_type}`: API接收事件数
+     - `analytics_events_inserted_total{event_type}`: 成功入库事件数
+     - `analytics_events_duplicates_total`: 重复事件数
+- **审计记录**：否（不写入 `audit_logs`，仅存储至 `analytics_events` 表）
+- **数据存储**：
+  - 表名：`analytics_events`
+  - 主键：`event_id UUID` 实现幂等去重
+  - 索引：按 `user_id + event_timestamp`, `event_name + event_timestamp`, `session_id + event_timestamp` 优化查询
+- **观测指标**：
+  - `analytics_events_received_total{event_type}` - API接收事件总数（按类型）
+  - `analytics_events_inserted_total{event_type}` - 成功入库事件数（按类型）
+  - `analytics_events_duplicates_total` - 重复事件数（主键冲突）
+  - `analytics_events_failed_total` - 入库失败次数（重试耗尽）
+  - `analytics_batch_insert_duration_seconds` - 批量插入耗时（秒）
+  - `analytics_batch_size` - 每批次插入的事件数量
+- **测试清单**：
+  - [x] 正常流（已登录用户上报）
+  - [x] 正常流（匿名用户携带X-Session-Id上报）
+  - [x] 参数校验（payload过大、嵌套过深、字段数超限）
+  - [x] 参数校验（匿名用户缺少X-Session-Id）
+  - [x] 幂等性（重复UUID被自动忽略）
+  - [ ] 限流测试（100次/分钟）
+  - [ ] 并发测试（多进程同时上报）
+  - [ ] 性能测试（API响应≤20ms，入库延迟≤5秒）
+- **前端触发时机**：
+  - 每隔15秒自动批量上报
+  - 累积10条事件时立即上报
+  - 页面关闭前上报剩余事件（`beforeunload`）
+- **数据可靠性保证**：
+  - Celery `task_acks_late=True`: 任务执行完才确认，失败自动重新投递
+  - Celery `task_reject_on_worker_lost=True`: Worker异常退出时拒绝任务（重新入队）
+  - Celery 自动重试: 最多3次，每次间隔10秒
+  - Redis Broker `visibility_timeout=3600`: 1小时可见性超时（避免长事务重复投递）
+  - PostgreSQL 主键约束: 最终幂等保证
+- **部署要求**：
+  - API服务: 可多进程/多副本运行
+  - Celery Worker: 独立 `analytics` 队列，建议2-4个worker
+    - 启动命令: `celery -A app.workers.celery_app worker -Q analytics,default -l info --concurrency=4`
+  - Redis Broker: 确保持久化已开启（AOF或RDB）
+- **变更历史**：
+  - 2025-11-23：首次发布，支持批量埋点上报
+
 ```markdown
 ### [API 名称]
 - **状态**：新增 | 修改 | 弃用 | 删除  （日期：YYYY-MM-DD）
@@ -58,7 +274,14 @@
 ```json
 {
   "access_token": "jwt-token",
-  "token_type": "bearer"
+  "token_type": "bearer",
+  "admin": {
+    "admin_id": 1,
+    "username": "admin",
+    "nickname": "管理员",
+    "role": "admin",
+    "permissions": ["orders:view", "orders:edit", "orders:refund", ...]
+  }
 }
 ```
 - **错误码**：
@@ -74,6 +297,266 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-10：首次发布
+  - 2025-01-XX：响应增加admin对象和permissions列表
+
+### 管理后台订单列表
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`GET /api/v1/admin/orders`
+- **权限**：管理员（需要 `orders:view` 权限）
+- **幂等要求**：是
+- **限流**：30次/分钟/管理员
+- **请求参数**：
+  - `page`: 页码，默认1，最小1
+  - `page_size`: 每页数量，默认20，范围1-100
+  - `status`: 订单状态，多个用逗号分隔（pending/paid/in_production/ready_for_pickup/completed/cancelled/refunded）
+  - `payment_status`: 支付状态，多个用逗号分隔（pending/paid/refunded）
+  - `order_type`: 订单类型（pos/online）
+  - `payment_channel`: 支付渠道（wechat/alipay/cash）
+  - `start_time`: 开始时间（ISO8601格式）
+  - `end_time`: 结束时间（ISO8601格式）
+  - `user_phone`: 用户手机号（模糊匹配）
+  - `order_number`: 订单号（模糊匹配）
+  - `pickup_code`: 取餐码（模糊匹配）
+- **响应体**：
+```json
+{
+  "items": [
+    {
+      "order_id": 123,
+      "order_number": "ORD20250115123456",
+      "status": "paid",
+      "payment_status": "paid",
+      "payment_channel": "wechat",
+      "order_type": "online",
+      "total_price": 38.50,
+      "user_phone": "138****5678",
+      "pickup_code": "A001",
+      "created_at": "2025-01-15T10:30:00Z",
+      "paid_at": "2025-01-15T10:30:15Z"
+    }
+  ],
+  "total": 156,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 8
+}
+```
+- **错误码**：
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 429 Too Many Requests —— 超限流
+- **副作用**：无
+- **审计记录**：不记录查询操作
+- **观测指标**：待补 `admin_order_list_total`
+- **测试清单**：
+  - [ ] 正常流（各种过滤组合）
+  - [ ] 分页边界测试
+  - [ ] 权限校验
+  - [ ] 限流测试
+
+### 管理后台订单详情
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`GET /api/v1/admin/orders/{order_id}`
+- **权限**：管理员（需要 `orders:view` 权限）
+- **幂等要求**：是
+- **限流**：60次/分钟/管理员
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "order_number": "ORD20250115123456",
+  "status": "paid",
+  "payment_status": "paid",
+  "payment_channel": "wechat",
+  "order_type": "online",
+  "source": "miniapp",
+  "total_price": 38.50,
+  "coupon_discount": 5.00,
+  "points_discount": 0.00,
+  "final_amount": 33.50,
+  "user_id": 456,
+  "user_phone": "13812345678",
+  "user_nickname": "小明",
+  "pickup_code": "A001",
+  "notes": "少糖",
+  "created_at": "2025-01-15T10:30:00Z",
+  "updated_at": "2025-01-15T10:30:15Z",
+  "paid_at": "2025-01-15T10:30:15Z",
+  "completed_at": null,
+  "cancelled_at": null,
+  "created_by_admin_id": null,
+  "items": [
+    {
+      "item_id": 789,
+      "product_id": 10,
+      "product_name": "招牌奶茶",
+      "quantity": 2,
+      "unit_price": 15.00,
+      "selected_specs": ["大杯", "正常糖"],
+      "subtotal": 30.00
+    }
+  ],
+  "address": {
+    "address": "广东省广州市天河区",
+    "detail": "XX街道XX号",
+    "name": "张三",
+    "phone": "13812345678",
+    "lat": 23.123456,
+    "lng": 113.123456
+  },
+  "timeline": [
+    {"status": "created", "time": "2025-01-15T10:30:00Z"},
+    {"status": "paid", "time": "2025-01-15T10:30:15Z"}
+  ]
+}
+```
+- **错误码**：
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+- **副作用**：无
+- **审计记录**：不记录查询操作
+- **观测指标**：待补 `admin_order_detail_total`
+
+### 管理后台修改订单状态
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`PUT /api/v1/admin/orders/{order_id}/status`
+- **权限**：管理员（需要 `orders:edit` 权限）
+- **幂等要求**：是（相同状态重复调用幂等）
+- **限流**：20次/分钟/管理员
+- **请求体**：
+```json
+{
+  "status": "cancelled",
+  "reason": "用户要求取消"
+}
+```
+- **字段说明**：
+  - `status`: 目标状态（in_production/ready_for_pickup/completed/cancelled）
+  - `reason`: 变更原因（取消时必填，最大200字符）
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "status": "cancelled",
+  "updated_at": "2025-01-15T11:00:00Z"
+}
+```
+- **错误码**：
+  - 400 Bad Request —— 状态转换不合法或缺少reason
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+- **副作用**：
+  1. 更新订单状态
+  2. 根据状态更新时间戳（completed_at/cancelled_at）
+  3. 写入审计日志（包含旧状态、新状态、原因）
+- **审计记录**：
+  - action: `order.status.update`
+  - risk_level: `high`（取消时为critical）
+  - 记录before/after状态和reason
+- **观测指标**：待补 `admin_order_status_update_total{status}`
+
+### 管理后台订单退款
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`POST /api/v1/admin/orders/{order_id}/refund`
+- **权限**：管理员（需要 `orders:refund` 权限）
+- **幂等要求**：否（每次调用产生新的退款记录）
+- **限流**：10次/分钟/管理员
+- **请求体**：
+```json
+{
+  "refund_type": "online",
+  "amount": 33.50,
+  "reason": "商品质量问题"
+}
+```
+- **字段说明**：
+  - `refund_type`: 退款类型（online-线上退款/offline-线下退款，必填）
+  - `amount`: 退款金额（必填，不能超过实付金额）
+  - `reason`: 退款原因（必填，最大200字符）
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "refund_type": "online",
+  "amount": 33.50,
+  "status": "processing",
+  "refund_id": null,
+  "message": "退款处理中，请稍后查询结果"
+}
+```
+- **字段说明**：
+  - `status`: 退款状态（success-成功/processing-处理中/failed-失败）
+  - `refund_id`: 退款流水号（offline时立即返回）
+  - `message`: 退款结果描述
+- **错误码**：
+  - 400 Bad Request —— 订单不支持退款或金额超限
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+- **副作用**：
+  1. 更新订单状态为refunded
+  2. 调用支付渠道退款接口（online类型）
+  3. 写入审计日志（记录退款类型、金额、原因）
+- **审计记录**：
+  - action: `order.refund`
+  - risk_level: `critical`
+  - 记录refund_type/amount/reason
+- **观测指标**：待补 `admin_order_refund_total{refund_type,status}`
+- **测试清单**：
+  - [ ] 正常流（online/offline）
+  - [ ] 金额校验（超限、负数）
+  - [ ] 状态校验（未支付、已退款）
+  - [ ] 权限校验
+  - [ ] 审计日志完整性
+
+### 管理后台修改取餐码
+- **状态**：新增（日期：2025-01-XX）
+- **路径/方法**：`PUT /api/v1/admin/orders/{order_id}/pickup-code`
+- **权限**：管理员（需要 `orders:edit` 权限）
+- **幂等要求**：是（相同新取餐码重复调用幂等）
+- **限流**：20次/分钟/管理员
+- **请求体**：
+```json
+{
+  "new_pickup_code": "B999",
+  "reason": "取餐码冲突，用户要求更换"
+}
+```
+- **字段说明**：
+  - `new_pickup_code`: 新取餐码（可选，不填则自动生成）
+  - `reason`: 修改原因（必填，最大200字符）
+- **响应体**：
+```json
+{
+  "order_id": 123,
+  "old_pickup_code": "A001",
+  "new_pickup_code": "B999",
+  "updated_at": "2025-01-15T11:00:00Z"
+}
+```
+- **错误码**：
+  - 400 Bad Request —— 订单状态不允许修改或取餐码已存在
+  - 401 Unauthorized —— 未登录
+  - 403 Forbidden —— 无权限
+  - 404 Not Found —— 订单不存在
+  - 409 Conflict —— 取餐码已被其他订单使用
+- **副作用**：
+  1. 验证新取餐码唯一性（如提供）
+  2. 更新订单取餐码
+  3. 写入审计日志（记录旧码、新码、原因）
+- **审计记录**：
+  - action: `order.pickup_code.update`
+  - risk_level: `high`
+  - 记录old_pickup_code/new_pickup_code/reason
+- **观测指标**：待补 `admin_order_pickup_code_update_total`
+- **测试清单**：
+  - [ ] 正常流（手动指定/自动生成）
+  - [ ] 唯一性校验
+  - [ ] 状态校验（未支付订单不允许）
+  - [ ] 权限校验
+  - [ ] 审计日志完整性
 
 ### 用户登录（Code → OpenID）
 - **状态**：新增 （日期：2025-10-10）
@@ -115,6 +598,42 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-10：首次发布
+
+### 绑定手机号
+- **状态**：新增 （日期：2025-11-24）
+- **路径/方法**：`POST /api/v1/users/phone/bind`
+- **权限**：用户 JWT | 游客（需 `guest_session_id`）
+- **幂等要求**：否
+- **限流**：继承全局 SlowAPI 设置
+- **请求体**：
+```json
+{
+  "code": "getPhoneNumber-code",
+  "guest_session_id": "gs_xxx"
+}
+```
+- **字段说明**：
+  - `code`：微信 `getPhoneNumber` 返回码，必填。
+  - `guest_session_id`：游客绑定时必填，登录用户可不填。
+- **响应体**：
+```json
+{
+  "phone_number": "13800001234",
+  "from_guest_session": false
+}
+```
+- **错误码**：
+  - 400 code 为空或 guest_session_id 无效/过期。
+- **副作用**：
+  - 登录用户：写入 `users.preferences_json.phone_number`
+  - 游客：回填到 `idempotency_keys.response_snapshot` 供后续下单使用
+- **审计记录**：无
+- **测试清单**：
+  - [x] 登录用户绑定
+  - [x] 游客携带 guest_session_id 绑定
+  - [ ] 错误码校验（code 为空 / 会话过期）
+- **变更历史**：
+  - 2025-11-24：首次发布
 
 ### 获取门店基础信息
 - **状态**：新增 （日期：2025-10-15）；更新 （日期：2025-10-31）
@@ -947,7 +1466,7 @@
   - 2025-10-27：首次发布
 
 ### 订单价格试算
-- **状态**：新增 （日期：2025-10-31）；更新（日期：2025-11-08，增加 ETA 字段与别名）
+- **状态**：新增 （日期：2025-10-31）；更新（日期：2025-11-24，统一请求体字段）
 - **路径/方法**：`POST /api/v1/orders/calculate-price`（别名：`POST /api/v1/orders/preview`）
 - **权限**：用户 JWT | 游客（未登录状态下无法使用优惠券/积分）
 - **幂等要求**：否（纯读操作）
@@ -955,30 +1474,47 @@
 - **请求体**：
 ```json
 {
+  "shop_id": 1,
+  "delivery_type": "pickup",
+  "dining_type": "takeout",
+  "scheduled_at": "2025-10-21T09:30:00+08:00",
+  "address": {
+    "address": "深圳市南山区科技园",
+    "detail": "XX大厦1层",
+    "name": "林小白",
+    "phone": "13800001234",
+    "lat": 22.543096,
+    "lng": 114.057865
+  },
+  "user_phone": "13800001234",
+  "coupon_id": 12345,
+  "use_points": true,
+  "notes": "少冰",
   "items": [
     {
       "product_id": 101,
       "quantity": 2,
-      "spec_option_ids": [1001, 1002]
+      "selected_specs": [
+        { "spec_id": 1001, "option_id": 1001, "option_name": "少糖" },
+        { "spec_id": 1002, "option_id": 1004, "option_name": "加珍珠", "price_modifier": 2.0 }
+      ]
     }
   ],
-  "coupon_id": 12345,
-  "points_use": 200,
-  "order_type": "delivery",
-  "address": {
-    "province": "广东省",
-    "city": "深圳市",
-    "district": "南山区",
-    "detail": "科技园XXX"
-  }
+  "guest_session_id": "gs_xxx"
 }
 ```
 - **请求字段说明**：
-  - `items`：与创建订单一致，最多 30 条。
-  - `coupon_id`：可选，仅登录用户可用，服务端验证适用性但不核销。
-  - `points_use`：可选，使用积分数量，整数且 `0 <= points_use <= 可用积分`，最多抵扣应付金额的 30%（100 积分=1元）。
-  - `order_type`：`pickup` / `delivery` / `dine_in`，当为 `delivery` 时必须提供 `address`。
-  - `address`：配送地址结构化字段，仅在 `delivery` 场景必填。
+  - `shop_id`：必填，门店 ID。
+  - `delivery_type`：`pickup` / `delivery`，下单/试算共用字段；兼容 `order_type` 作为别名。
+  - `dining_type`：可选，就餐方式（`dine-in` / `takeout`）。
+  - `scheduled_at`：可选，ISO8601 且必须带时区，预约仅支持自提。
+  - `address`：当 `delivery_type=delivery` 时必填，包含 `address/detail/name/phone/lat/lng`。
+  - `user_phone`：试算可选，创建订单必填，用于联系，可配合游客会话使用。
+  - `coupon_id`：可选，仅登录用户可用。
+  - `use_points`：布尔开关，开启后自动按上限使用积分（兼容旧字段 `points_use`）。
+  - `notes`：备注，最长 200。
+  - `items[].selected_specs`：规格选择，最少包含 `option_id`；服务端按商品映射落库价差。
+  - `guest_session_id`：游客必填，来自 `/api/v1/guests/session`。
 - **响应体**：
 ```json
 {
@@ -1009,30 +1545,24 @@
     "reason": ""
   },
   "points_info": {
-    "available": 500,
-    "used": 100,
-    "discount": 1.0,
+    "available": 5000,
+    "used": 200,
+    "discount": 2.0,
     "exchange_rate": 100
   },
-  "eta_minutes": 20,
-  "eta_text": "约 20 分钟"
+  "eta_minutes": 15,
+  "eta_text": "预计 15 分钟后可取餐"
 }
 ```
-- **响应说明**：
-  - `subtotal`：商品金额（含规格），未扣减优惠。
-  - `coupon_discount`：优惠券抵扣金额，最小为 0。
-  - `points_discount`：积分抵扣金额，最多为 `0.3 * (subtotal - coupon_discount)`。
-  - `delivery_fee`：`delivery` 且金额 < 30 收取 6 元，否则 0。
-  - `final_amount = max(0, subtotal - coupon_discount - points_discount + delivery_fee)`。
-  - `breakdown`：逐品项明细，含规格及单价。
+- **字段说明**：
+  - `breakdown`：逐行单品明细，含规格与小计。
   - `coupon_info`：优惠券适配结果，不适用时 `is_applicable=false` 并在 `reason` 中说明原因。
   - `points_info`：积分余额与实际抵扣，登录用户即使未使用积分也会返回可用余额。
   - `eta_minutes` / `eta_text`：预计等待/送达时间，按商品数量与配送方式估算。
 - **错误码**：
   - 400 商品不存在 / 下架 / 库存不足。
-  - 400 未登录却传入 `coupon_id` / `points_use`。
-  - 400 优惠券不存在、未达到门槛或类型不支持。
-  - 400 配送单未提供地址。
+  - 400 未登录却传入 `coupon_id` / `use_points=true`。
+  - 400 配送单未提供地址 / 缺少 `shop_id` 或 `delivery_type`。
 - **副作用**：无（不写库、不扣库存、不核销优惠券）
 - **审计记录**：不记录
 - **观测指标**：待补（可追加 `order_calculate_price_latency_ms`）
@@ -1043,10 +1573,10 @@
   - [x] 配送费（未满 30 收费、满 30 免配送）
   - [ ] 性能阈值（P95 < 50ms）
 - **变更历史**：
+  - 2025-11-24：请求体改为共用 schema（shop_id/delivery_type/user_phone/use_points/selected_specs）
   - 2025-10-31：首次发布
-
 ### 创建订单
-- **状态**：新增 （日期：2025-10-17）；更新（日期：2025-11-08，新增 ETA 与取餐码字段）
+- **状态**：新增 （日期：2025-10-17）；更新（日期：2025-11-24，统一请求体并强制联系方式）
 - **路径/方法**：`POST /api/v1/orders`
 - **权限**：用户 JWT | 游客（需有效 `guest_session_id`）
 - **幂等要求**：是 (`Idempotency-Key` 请求头)
@@ -1054,32 +1584,44 @@
 - **请求体**：
 ```json
 {
-  "items": [
-    {
-      "product_id": 101,
-      "quantity": 2,
-      "spec_option_ids": [1001, 1002]
-    }
-  ],
-  "order_type": "pickup",
+  "shop_id": 1,
+  "delivery_type": "pickup",
+  "user_phone": "13800001234",
   "notes": "少冰",
   "guest_session_id": "gs_xxx",
   "scheduled_at": "2025-10-21T09:30:00+08:00",
   "coupon_id": 12345,
   "address": {
-    "contact_name": "林小白",
+    "address": "上海市虹口区 XXX 路",
+    "detail": "6号楼 101",
+    "name": "林小白",
     "phone": "13800001234",
-    "address_line": "上海市虹口区 XXX 路",
     "lat": 31.2304,
     "lng": 121.4737
-  }
+  },
+  "items": [
+    {
+      "product_id": 101,
+      "quantity": 2,
+      "selected_specs": [
+        { "spec_id": 201, "option_id": 3001, "option_name": "去冰" },
+        { "spec_id": 202, "option_id": 3002, "option_name": "少糖" }
+      ]
+    }
+  ]
 }
 ```
 - **请求字段说明**：
-  - `coupon_id` (可选): 优惠券ID，仅登录用户可用。使用 `free_any_drink` 类型优惠券时，自动免除订单中最便宜的一杯价格。
+  - `shop_id` / `delivery_type` / `items` / `user_phone`：必填，`delivery_type` 兼容 `order_type` 作为别名。
+  - `guest_session_id`：游客下单必填，来源 `/api/v1/guests/session`。
+  - `scheduled_at`：可选，自提预约时间，需带时区且受开关/容量限制。
+  - `coupon_id`：可选，仅登录用户可用，订单创建时会核销。
+  - `notes`：备注，最长 200。
+  - `items[].selected_specs`：规格选择，至少提供 `option_id`，其余字段用于透传文案。
 - **响应字段补充**：
   - `eta_minutes` / `eta_text`：下单时的预计等待/送达时间。
-  - `pickup_code`：取餐码（自取/前台核验展示）。
+  - `pickup_code`：取餐码（支付成功后生成，未支付为 `null`，可配置前缀/长度）。
+  - 取餐码格式配置：`shop_settings` 表中的 `pickup_code_prefix` / `pickup_code_digits` 优先，其次读取 `.env` 中的 `PICKUP_CODE_PREFIX` / `PICKUP_CODE_DIGITS`，总长度不超过 20。
 - **响应体**：
 ```json
 {
@@ -1092,53 +1634,43 @@
   "is_scheduled": true,
   "scheduled_at": "2025-10-21T01:30:00+00:00",
   "reminder_sent_at": null,
-  "eta_minutes": 25,
-  "eta_text": "预计 2025-10-21T01:30:00+00:00",
-  "pickup_code": "238901",
+  "eta_minutes": 15,
+  "eta_text": "预计 15 分钟后可取餐",
+  "pickup_code": null,
   "items": [
     {
-      "item_id": 12345,
+      "item_id": 1,
       "product_id": 101,
-      "product_name": "桂花乌龙",
+      "product_name": "珍珠奶茶",
       "quantity": 2,
       "unit_price": 13.0,
-      "selected_specs": [
-        {
-          "group_id": 100,
-          "group_name": "甜度",
-          "option_id": 1001,
-          "option_name": "半糖",
-          "price_modifier": 0.0
-        }
-      ]
+      "selected_specs": []
     }
   ]
 }
 ```
 - **错误码**：
-  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id` / 商品或规格已下架 / 预约档期已满 / 优惠券不存在、已使用或不属于当前用户
-  - 422 预约时间不合法（非当日/未在营业时间/未带时区）
-  - 403 游客会话不匹配目标订单
-  - 409 Idempotency-Key 与历史请求不一致
-- **预约容量**：默认以 `RESERVATION_SLOT_GRANULARITY_MINUTES=15` 分钟为档期粒度，且每个档期至多 `RESERVATION_SLOT_CAPACITY=10` 单（可通过环境变量调优）
-- **副作用**：写库 `orders`、`order_items`、`idempotency_keys`
-- **审计记录**：暂不写入
+  - 400 缺少 `Idempotency-Key` / 游客缺少 `guest_session_id`。
+  - 400 商品不存在 / 下架 / 库存不足 / 配送缺少 address / user_phone 为空。
+  - 400 优惠券不存在、已使用或不属于当前用户。
+  - 400 预约未开启 / 超出可预约时间 / 档期已满。
+  - 409 幂等冲突（重复 Idempotency-Key 与不同请求体）。
+- **副作用**：写库 `orders/order_items/idempotency_keys`，扣减库存，必要时占用预约时间段。
+- **审计记录**：无
 - **观测指标**：
-  - `order_create_total{result=success|service_error|unexpected_error}`
-  - `inventory_deduction_total{result=success|insufficient|restored}`
-  - `inventory_current_stock{product_id}`
-  - `inventory_oversell_total{product_id}`
+  - `order_create_total{result}`
+  - `inventory_deduction_total{result}`
 - **测试清单**：
-  - [x] 正常流
-  - [x] 参数校验（游客无 session、规格越权）
-  - [ ] 权限校验
-  - [x] 幂等 / 并发
-  - [ ] 性能阈值
+  - [x] 正常流（用户/游客）
+  - [x] 幂等（重复提交同一键）
+  - [x] 库存扣减与售罄切换
+  - [x] 预约容量/营业时间校验
+  - [ ] 性能阈值（P95 < 50ms）
 - **变更历史**：
+  - 2025-11-30：取餐码改为支付成功后生成，支持自定义前缀/位数
+  - 2025-11-24：请求体统一（shop_id/delivery_type/user_phone/selected_specs），备注长度收紧
+  - 2025-11-08：新增 ETA 与取餐码字段
   - 2025-10-17：首次发布
-  - 2025-10-24：支持预约下单（`scheduled_at` 字段，需携带时区；仅 pickup，当日+提前 15 分钟）
-  - 2025-11-08：返回 ETA（分钟+文案）与取餐码
-
 ### 获取订单详情
 - **状态**：新增 （日期：2025-11-08）
 - **路径/方法**：`GET /api/v1/orders/{order_id}`
@@ -1152,10 +1684,18 @@
 - **状态**：新增 （日期：2025-11-08）
 - **路径/方法**：`GET /api/v1/me/orders`
 - **权限**：用户 JWT
-- **查询参数**：`limit`（默认20，1-100）、`offset`（默认0，>=0）
+- **查询参数**：
+  - `limit`（默认20，1-100）
+  - `offset`（默认0，>=0）
+  - `status`（可选，字符串，多个状态用逗号分隔）允许值：`pending_payment`, `paid`, `in_production`, `ready_for_pickup`, `completed`, `cancelled`, `refund_pending`, `refunded`
 - **响应体**：`OrderResponseSchema` 列表（含 ETA、取餐码）
-- **错误码**：401 未登录
+- **错误码**：
+  - 400 Invalid status values —— 传入的状态值不合法
+  - 401 未登录
 - **副作用**：无
+- **示例**：
+  - `GET /api/v1/me/orders?status=pending_payment` —— 仅返回待支付订单
+  - `GET /api/v1/me/orders?status=paid,in_production` —— 返回已支付和制作中的订单
 
 ### 地址簿管理
 - **状态**：新增 （日期：2025-11-08）
@@ -1293,6 +1833,53 @@
   - [ ] 性能阈值
 - **变更历史**：
   - 2025-10-17：首次发布
+
+### 取消订单
+- **状态**：新增 （日期：2025-11-29）
+- **路径/方法**：`POST /api/v1/orders/{order_id}/cancel`
+- **权限**：用户 JWT | 游客（需匹配 `guest_session_id`）
+- **幂等要求**：是（重复取消已取消订单返回 409）
+- **限流**：应用内 SlowAPI `100 req/min`
+- **查询参数**：
+  - `guest_session_id`（可选，字符串）用于游客身份校验
+- **请求体**：无
+- **响应体**：`OrderResponseSchema`（含更新后的订单状态）
+```json
+{
+  "order_id": 9001,
+  "order_number": "20251129123045-NA1234",
+  "status": "cancelled",
+  "order_type": "pickup",
+  "total_price": 26.0,
+  "created_at": "2025-11-29T12:30:45Z",
+  "is_scheduled": false,
+  "scheduled_at": null,
+  "eta_minutes": null,
+  "eta_text": "订单已取消",
+  "pickup_code": null,
+  "items": [...]
+}
+```
+- **错误码**：
+  - 403 订单不属于当前用户 / 游客会话不匹配
+  - 404 订单不存在
+  - 409 订单状态非 `pending_payment` 或已支付，无法取消
+- **副作用**：
+  - 订单状态更新为 `cancelled`
+  - 归还库存（`inventory.available_stock` 增加）
+  - 释放预约时段（若有 `reservation_slot_id`）
+  - 写入审计日志（`actor_type=user|guest`, `action=order.user_cancel`）
+- **审计记录**：记录取消操作及库存归还详情
+- **观测指标**：可复用现有订单指标
+- **测试清单**：
+  - [x] 正常流（用户取消待支付订单）
+  - [x] 权限校验（跨用户 403、游客 session 不匹配 403）
+  - [x] 状态校验（已支付订单返回 409）
+  - [x] 库存归还正确
+  - [x] 预约时段释放
+  - [x] 幂等性（重复取消返回 409）
+- **变更历史**：
+  - 2025-11-29：首次发布
 
 ### 微信支付回调
 - **状态**：新增 （日期：2025-10-17）

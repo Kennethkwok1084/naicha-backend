@@ -33,9 +33,11 @@ class DashboardPaymentChannelSchema(BaseModel):
 
 
 class DashboardResponseSchema(BaseModel):
-    range: Literal["day", "week", "month"]
+    range: Literal["day", "week", "month", "custom"]
     summary: DashboardSummarySchema
     trend: list[DashboardTrendPointSchema]
     top_products: list[DashboardTopProductSchema]
     payment_channel_split: list[DashboardPaymentChannelSchema]
     compare_summary: DashboardSummarySchema | None = None
+    start_date: str | None = None  # 自定义日期时返回
+    end_date: str | None = None  # 自定义日期时返回

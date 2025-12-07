@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.core.settings import get_settings
 from app.models.accounts import User
 from app.models.catalog import Category, Product, ProductSpecMapping, SpecGroup, SpecOption
 from app.models.shop import ShopProfile
 from app.schemas import OrderCreateRequestSchema, OrderItemCreateSchema
 from app.services.orders import OrderService, OrderValidationError
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 async def _seed_menu(session, *, stock: int) -> None:
@@ -89,8 +90,10 @@ async def test_reservation_slot_concurrent_capacity(model_test_engine) -> None:
                             spec_option_ids=[7101],
                         )
                     ],
+                    shop_id=1,
                     order_type="pickup",
                     scheduled_at=scheduled_local,
+                    user_phone="13800000000",
                 )
                 try:
                     return await service.create_order(

@@ -85,9 +85,7 @@ class MerchantNotifier:
             self._connections.add(websocket)
             queue = asyncio.Queue(maxsize=max(self._settings.merchant_ws_buffer_size, 1))
             self._connection_queues[websocket] = queue
-            self._sender_tasks[websocket] = asyncio.create_task(
-                self._drain_queue(websocket, queue)
-            )
+            self._sender_tasks[websocket] = asyncio.create_task(self._drain_queue(websocket, queue))
 
     async def unregister(self, websocket: WebSocket) -> None:
         task: asyncio.Task[None] | None = None

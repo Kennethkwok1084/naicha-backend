@@ -39,4 +39,3 @@ class MaintenanceHeartbeat(Base):
     name: Mapped[str] = mapped_column(String(50), primary_key=True)
     last_heartbeat: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-

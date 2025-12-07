@@ -14,9 +14,9 @@ from sqlalchemy import insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog import get_logger
 
 from app.core.settings import Settings
-from structlog import get_logger
 from app.metrics.inventory import (
     INVENTORY_CURRENT_STOCK,
     INVENTORY_DEDUCTION_TOTAL,
@@ -187,6 +187,8 @@ class OrderService:
         )
         if not idempotency_key.strip():
             raise OrderValidationError("Idempotency-Key header is required.")
+        if not payload.user_phone:
+            raise OrderValidationError("下单时必须填写 user_phone 以便联系取餐/配送。")
 
         actor_guest_session = payload.guest_session_id
         if user is None and not actor_guest_session:
@@ -194,7 +196,7 @@ class OrderService:
         if payload.order_type == "delivery" and payload.address is None:
             raise OrderValidationError("Delivery order requires address.")
 
-        payload_dict = payload.model_dump(mode="json")
+        payload_dict = self._normalize_payload_for_idempotency(payload.model_dump(mode="json"))
         payload_hash = self._hash_payload(payload_dict)
 
         tx = self._session.get_transaction()
@@ -217,12 +219,16 @@ class OrderService:
             if started_transaction or inherited_transaction_needs_commit:
                 await self._session.commit()
         except OrderServiceError:
-            if (started_transaction or inherited_transaction_needs_commit) and self._session.in_transaction():
+            if (
+                started_transaction or inherited_transaction_needs_commit
+            ) and self._session.in_transaction():
                 await self._session.rollback()
             ORDER_CREATE_TOTAL.labels(result="service_error").inc()
             raise
         except Exception:
-            if (started_transaction or inherited_transaction_needs_commit) and self._session.in_transaction():
+            if (
+                started_transaction or inherited_transaction_needs_commit
+            ) and self._session.in_transaction():
                 await self._session.rollback()
             ORDER_CREATE_TOTAL.labels(result="unexpected_error").inc()
             raise
@@ -325,26 +331,30 @@ class OrderService:
             reservation_plan=reservation_plan,
         )
         item_count_total = sum(item.quantity for item in payload.items)
-        
+
         # 应用优惠券折扣
         if payload.coupon_id and user:
             from app.services.loyalty import CouponInvalidError, CouponNotFoundError, LoyaltyService
-            
+
             loyalty_service = LoyaltyService(self._session, self._settings)
             try:
                 # 临时创建订单ID以便验证优惠券(实际订单ID稍后生成)
                 # 先验证优惠券是否有效, 但不标记为已使用
-                coupon_stmt = select(Coupon).where(
-                    Coupon.coupon_id == payload.coupon_id,
-                    Coupon.user_id == user.user_id,
-                    Coupon.status == "active",
-                ).with_for_update()
+                coupon_stmt = (
+                    select(Coupon)
+                    .where(
+                        Coupon.coupon_id == payload.coupon_id,
+                        Coupon.user_id == user.user_id,
+                        Coupon.status == "active",
+                    )
+                    .with_for_update()
+                )
                 coupon_result = await self._session.execute(coupon_stmt)
                 coupon = coupon_result.scalar_one_or_none()
-                
+
                 if not coupon:
                     raise OrderValidationError("优惠券不存在、已使用或不属于当前用户")
-                
+
                 # 应用折扣 - free_any_drink 类型免单最便宜的一杯
                 if coupon.type == "free_any_drink":
                     if db_items_payload:
@@ -356,7 +366,7 @@ class OrderService:
                         total_price = max(Decimal("0.00"), total_price - discount)
             except (CouponNotFoundError, CouponInvalidError) as e:
                 raise OrderValidationError(str(e)) from e
-        
+
         order_values["total_price"] = total_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         order_stmt = (
@@ -384,24 +394,21 @@ class OrderService:
         for payload_item in db_items_payload:
             payload_item["order_id"] = order_id
 
-        items_stmt = (
-            insert(OrderItem)
-            .returning(
-                OrderItem.item_id,
-                OrderItem.product_id,
-                OrderItem.product_name,
-                OrderItem.quantity,
-                OrderItem.unit_price,
-                OrderItem.selected_specs_json,
-            )
+        items_stmt = insert(OrderItem).returning(
+            OrderItem.item_id,
+            OrderItem.product_id,
+            OrderItem.product_name,
+            OrderItem.quantity,
+            OrderItem.unit_price,
+            OrderItem.selected_specs_json,
         )
         items_result = await self._session.execute(items_stmt, db_items_payload)
         inserted_items = items_result.fetchall()
-        
+
         # 标记优惠券为已使用
         if payload.coupon_id and user:
             from app.services.loyalty import LoyaltyService
-            
+
             loyalty_service = LoyaltyService(self._session, self._settings)
             await loyalty_service.use_coupon(
                 coupon_id=payload.coupon_id,
@@ -535,8 +542,10 @@ class OrderService:
                 .on_conflict_do_nothing(index_elements=[IdempotencyKey.idempotency_key])
             )
         else:
-            insert_stmt = insert(IdempotencyKey).values(insert_payload).execution_options(
-                ignore_conflicts=True
+            insert_stmt = (
+                insert(IdempotencyKey)
+                .values(insert_payload)
+                .execution_options(ignore_conflicts=True)
             )
 
         insert_result = await self._session.execute(insert_stmt)
@@ -582,6 +591,16 @@ class OrderService:
             raise OrderValidationError("Guest session is invalid.")
         if record.expire_at and record.expire_at < datetime.now(tz=UTC):
             raise OrderValidationError("Guest session has expired.")
+
+    @staticmethod
+    def _normalize_payload_for_idempotency(payload_dict: dict[str, Any]) -> dict[str, Any]:
+        """剔除不影响语义的字段，避免因规格文案差异导致幂等冲突。"""
+        items = payload_dict.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    item.pop("selected_specs", None)
+        return payload_dict
 
     async def _load_products_with_groups(
         self,
@@ -654,14 +673,15 @@ class OrderService:
         reservation_plan,
     ) -> dict[str, Any]:
         order_number = self._generate_order_number()
-        pickup_code = self._generate_pickup_code()
         address_json = payload.address.model_dump() if payload.address else None
+        if payload.user_phone:
+            address_json = {**(address_json or {}), "phone": payload.user_phone}
         scheduled_at = reservation_plan.scheduled_at_utc if reservation_plan else None
         reservation_slot_id = reservation_plan.slot_id if reservation_plan else None
 
         return {
             "order_number": order_number,
-            "pickup_code": pickup_code,
+            "pickup_code": None,
             "user_id": user.user_id if user else None,
             "guest_session_id": None if user else guest_session_id,
             "total_price": Decimal("0.00"),
@@ -864,7 +884,9 @@ class OrderService:
 
         return max(int(eta), 1)
 
-    def _format_eta_text(self, eta_minutes: int | None, scheduled_at: datetime | None) -> str | None:
+    def _format_eta_text(
+        self, eta_minutes: int | None, scheduled_at: datetime | None
+    ) -> str | None:
         if eta_minutes is None:
             return None
         if scheduled_at is not None:
@@ -995,6 +1017,92 @@ class OrderService:
 
         return True
 
+    async def cancel_order(
+        self,
+        order_id: int,
+        actor: User | None,
+        *,
+        guest_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """用户主动取消订单"""
+        bind = getattr(self._session, "bind", None)
+        if bind is not None:
+            dialect_name = getattr(bind.dialect, "name", "")
+        else:
+            async with self._session.connection() as conn:
+                dialect_name = conn.dialect.name
+
+        stmt = select(Order).where(Order.order_id == order_id)
+        if dialect_name != "sqlite":
+            stmt = stmt.with_for_update()
+
+        result = await self._session.execute(stmt)
+        order = result.scalar_one_or_none()
+        if order is None:
+            raise OrderNotFoundError("Order not found.")
+
+        # 校验订单归属
+        self._ensure_order_access(order, actor, guest_session_id)
+
+        # 仅允许待支付状态取消
+        if order.status != "pending_payment" or order.payment_status != "pending":
+            raise OrderConflictError("Only pending_payment orders can be cancelled by user.")
+
+        # 获取订单项
+        items_result = await self._session.execute(
+            select(OrderItem).where(OrderItem.order_id == order.order_id)
+        )
+        items = list(items_result.scalars().all())
+
+        # 归还库存
+        inventory_service = InventoryService(self._session, self._settings)
+        inventory_changes = await inventory_service.restore_from_order_items(
+            items,
+            dialect_name=dialect_name,
+        )
+
+        now = datetime.now(tz=UTC)
+        previous_status = order.status
+        previous_payment_status = order.payment_status
+        order.status = "cancelled"
+        order.updated_at = now
+        reservation_slot_id = order.reservation_slot_id
+
+        # 写入审计日志
+        audit = AuditLog(
+            actor_type="user",
+            actor_admin_id=None,
+            actor_user_id=actor.user_id if actor else None,
+            action="order.user_cancel",
+            target_table="orders",
+            target_id=str(order.order_id),
+            before_json={
+                "status": previous_status,
+                "payment_status": previous_payment_status,
+            },
+            after_json={
+                "status": order.status,
+                "payment_status": order.payment_status,
+                "reason": "user_cancel",
+                "inventory_restored": inventory_changes if inventory_changes else None,
+            },
+            ip=None,
+            user_agent=None,
+        )
+        self._session.add(audit)
+
+        await self._session.flush()
+
+        # 释放预约时段
+        if reservation_slot_id:
+            reservation_service = ReservationService(self._session, self._settings)
+            await reservation_service.release_slot(reservation_slot_id)
+            order.reservation_slot_id = None
+            order.is_scheduled = False
+            await self._session.flush()
+
+        return self._build_order_response(order, items)
+
     async def get_order_detail(
         self,
         order_id: int,
@@ -1022,14 +1130,20 @@ class OrderService:
         *,
         limit: int = 20,
         offset: int = 0,
+        status: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        stmt = (
-            select(Order)
-            .where(Order.user_id == actor.user_id)
-            .order_by(Order.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
+        # 空列表直接返回，避免全表扫描
+        if status is not None and len(status) == 0:
+            return []
+
+        stmt = select(Order).where(Order.user_id == actor.user_id)
+
+        # 状态筛选
+        if status is not None:
+            stmt = stmt.where(Order.status.in_(status))
+
+        stmt = stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset)
+
         result = await self._session.execute(stmt)
         orders = list(result.scalars().all())
         if not orders:
@@ -1152,11 +1266,6 @@ class OrderService:
         millis = int(now.microsecond / 1000)
         random_suffix = secrets.token_hex(3).upper()
         return f"{timestamp}{millis:03d}-NA{random_suffix}"
-
-    @staticmethod
-    def _generate_pickup_code() -> str:
-        alphabet = "0123456789"
-        return "".join(secrets.choice(alphabet) for _ in range(6))
 
     @staticmethod
     def _serialize_datetime(value: datetime | None) -> str | None:

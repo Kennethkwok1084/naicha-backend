@@ -4,6 +4,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from app.core.security import TokenScope, create_access_token
 from app.core.settings import get_settings
 from app.db.session import get_async_session
@@ -11,8 +14,6 @@ from app.main import app
 from app.models.accounts import Admin, User
 from app.models.catalog import Category, Product
 from app.models.orders import WantEvent
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 
 async def _seed_product(db_session) -> Product:
@@ -53,7 +54,9 @@ async def test_guest_want_submission(db_session) -> None:
             assert payload["product_id"] == product.product_id
             assert payload["source"] == "guest"
 
-        events = await db_session.execute(select(WantEvent).where(WantEvent.product_id == product.product_id))
+        events = await db_session.execute(
+            select(WantEvent).where(WantEvent.product_id == product.product_id)
+        )
         assert len(list(events.scalars())) == 1
     finally:
         settings.want_enabled = original
@@ -122,7 +125,13 @@ async def test_admin_want_stats(db_session) -> None:
     settings.want_enabled = True
 
     service_time = datetime.now(tz=UTC) - timedelta(days=1)
-    event = WantEvent(product_id=product.product_id, user_id=None, ip_hash="hash", user_agent=None, created_at=service_time)
+    event = WantEvent(
+        product_id=product.product_id,
+        user_id=None,
+        ip_hash="hash",
+        user_agent=None,
+        created_at=service_time,
+    )
     db_session.add(event)
     await db_session.flush()
 

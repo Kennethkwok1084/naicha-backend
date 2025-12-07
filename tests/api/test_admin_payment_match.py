@@ -4,13 +4,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
 from app.models.accounts import Admin, User
 from app.models.orders import Order, PaymentRecord, PrintJob
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 
 def _admin_token(admin_id: int) -> str:
@@ -109,7 +110,9 @@ async def test_admin_payment_match_auto_success(db_session, monkeypatch) -> None
     assert payment.qr_session_id == "qr-session-1"
 
     print_jobs = list(
-        (await db_session.execute(select(PrintJob).where(PrintJob.order_id == order.order_id))).scalars()
+        (
+            await db_session.execute(select(PrintJob).where(PrintJob.order_id == order.order_id))
+        ).scalars()
     )
     assert len(print_jobs) == 1
     assert enqueued == [print_jobs[0].job_id]
@@ -291,7 +294,9 @@ async def test_admin_payment_match_manual_force_success(db_session, monkeypatch)
     assert order_b.status == "paid"
 
     print_jobs = list(
-        (await db_session.execute(select(PrintJob).where(PrintJob.order_id == order_b.order_id))).scalars()
+        (
+            await db_session.execute(select(PrintJob).where(PrintJob.order_id == order_b.order_id))
+        ).scalars()
     )
     assert len(print_jobs) == 1
     assert enqueued == [print_jobs[0].job_id]

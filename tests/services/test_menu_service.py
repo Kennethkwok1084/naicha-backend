@@ -4,6 +4,7 @@ import time
 from decimal import Decimal
 
 import pytest
+
 from app.core.settings import get_settings
 from app.models import catalog as catalog_module
 from app.models.catalog import (
@@ -47,8 +48,12 @@ async def _seed_basic_menu(db_session) -> None:
         inventory_status="in_stock",
         sort_order=1,
     )
-    mapping = ProductSpecMapping(mapping_id=10, product_id=product.product_id, group_id=spec_group.group_id)
-    product_category = ProductCategory(product_id=product.product_id, category_id=category.category_id)
+    mapping = ProductSpecMapping(
+        mapping_id=10, product_id=product.product_id, group_id=spec_group.group_id
+    )
+    product_category = ProductCategory(
+        product_id=product.product_id, category_id=category.category_id
+    )
 
     uncategorized = Product(
         product_id=11,

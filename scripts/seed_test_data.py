@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.core.settings import get_settings
 from app.db.base import Base
 from app.models.accounts import Admin, Coupon, LoyaltyTransaction, User, UserAddress
+from app.models.advertisement import AdCreative, AdPlacement, AdSlot
 from app.models.catalog import (
     Category,
     Product,
@@ -43,9 +44,56 @@ from app.models.catalog import (
 )
 from app.models.orders import Order, OrderItem, PaymentRecord
 from app.models.reservations import ReservationSlot
-from app.models.shop import ShopProfile, ShopSetting
-from sqlalchemy import select
+from app.models.shop import ShopConfig, ShopProfile, ShopSetting
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+
+async def sync_sequences(session_factory) -> None:
+    """同步所有主键序列，避免手动指定ID后序列不更新导致的主键冲突"""
+    async with session_factory() as session:
+        print("🔧 同步数据库序列...")
+        
+        tables = [
+            ("orders", "orders_order_id_seq", "order_id"),
+            ("order_items", "order_items_item_id_seq", "item_id"),
+            ("payment_records", "payment_records_pay_id_seq", "pay_id"),
+            ("audit_logs", "audit_logs_audit_id_seq", "audit_id"),
+            ("print_jobs", "print_jobs_job_id_seq", "job_id"),
+            ("want_events", "want_events_id_seq", "id"),
+            ("users", "users_user_id_seq", "user_id"),
+            ("user_addresses", "user_addresses_address_id_seq", "address_id"),
+            ("admins", "admins_admin_id_seq", "admin_id"),
+            ("categories", "categories_category_id_seq", "category_id"),
+            ("products", "products_product_id_seq", "product_id"),
+            ("spec_groups", "spec_groups_group_id_seq", "group_id"),
+            ("spec_options", "spec_options_option_id_seq", "option_id"),
+            ("coupons", "coupons_coupon_id_seq", "coupon_id"),
+            ("loyalty_transactions", "loyalty_transactions_transaction_id_seq", "transaction_id"),
+            ("reservation_slots", "reservation_slots_slot_id_seq", "slot_id"),
+            ("ad_slots", "ad_slots_slot_id_seq", "slot_id"),
+            ("ad_creatives", "ad_creatives_creative_id_seq", "creative_id"),
+            ("ad_placements", "ad_placements_placement_id_seq", "placement_id"),
+        ]
+        
+        for table_name, seq_name, pk_col in tables:
+            try:
+                # 获取最大ID
+                result = await session.execute(
+                    text(f"SELECT COALESCE(MAX({pk_col}), 0) as max_id FROM {table_name}")
+                )
+                max_id = result.scalar()
+                
+                # 同步序列
+                if max_id > 0:
+                    await session.execute(text(f"SELECT setval('{seq_name}', {max_id}, true)"))
+                    print(f"  ✓ {table_name:25} 序列已同步至 {max_id}")
+            except Exception as e:
+                # 某些表可能不存在或没有序列，跳过
+                pass
+        
+        await session.commit()
+        print()
 
 
 async def clean_database(session_factory) -> None:
@@ -654,6 +702,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": "A001",
                 "created_at": now - timedelta(minutes=5)
             },
             # 制作中订单
@@ -679,6 +728,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": "A002",
                 "created_at": now - timedelta(minutes=15)
             },
             # 待取货订单
@@ -698,6 +748,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": "B001",
                 "created_at": now - timedelta(minutes=30)
             },
             # 已完成订单
@@ -723,6 +774,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": None,
                 "created_at": now - timedelta(hours=2)
             },
             # 待支付订单
@@ -742,6 +794,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": None,
                 "created_at": now - timedelta(minutes=10)
             },
             # 已取消订单
@@ -761,6 +814,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": None,
                 "created_at": now - timedelta(hours=1)
             },
             # POS 订单（管理员创建）
@@ -780,6 +834,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": 1,
                 "is_scheduled": False,
                 "scheduled_at": None,
+                "pickup_code": "C001",
                 "created_at": now - timedelta(hours=3)
             },
             # 预约订单
@@ -799,6 +854,7 @@ async def seed_orders(session_factory) -> None:
                 "created_by_admin_id": None,
                 "is_scheduled": True,
                 "scheduled_at": now + timedelta(days=1, hours=2),
+                "pickup_code": "D001",
                 "created_at": now - timedelta(hours=5)
             }
         ]
@@ -1217,6 +1273,216 @@ async def seed_loyalty_transactions(session_factory) -> None:
         print()
 
 
+async def seed_ad_slots(session_factory) -> None:
+    """创建广告位"""
+    async with session_factory() as session:
+        print("🎪 创建广告位...")
+        
+        slots_data = [
+            {
+                "slot_id": 1,
+                "code": "home_banner",
+                "name": "首页轮播图",
+                "description": "小程序首页顶部轮播广告位",
+                "spec": {"width": 750, "height": 400, "max_items": 5}
+            },
+            {
+                "slot_id": 2,
+                "code": "category_top",
+                "name": "分类页顶部",
+                "description": "商品分类页面顶部横幅",
+                "spec": {"width": 750, "height": 300, "max_items": 3}
+            },
+            {
+                "slot_id": 3,
+                "code": "order_success",
+                "name": "下单成功页",
+                "description": "订单支付成功后展示的广告",
+                "spec": {"width": 750, "height": 200, "max_items": 1}
+            }
+        ]
+        
+        for slot_data in slots_data:
+            result = await session.execute(
+                select(AdSlot).where(AdSlot.slot_id == slot_data["slot_id"])
+            )
+            if not result.scalar_one_or_none():
+                session.add(AdSlot(**slot_data))
+                print(f"  ✓ {slot_data['name']} ({slot_data['code']})")
+        
+        await session.commit()
+        print()
+
+
+async def seed_ad_creatives(session_factory) -> None:
+    """创建广告素材"""
+    async with session_factory() as session:
+        print("🖼️  创建广告素材...")
+        
+        now = datetime.now()
+        
+        creatives_data = [
+            {
+                "creative_id": 1,
+                "title": "新品上市 - 芝士奶盖",
+                "image_url": "https://via.placeholder.com/750x400?text=芝士奶盖新品",
+                "jump_type": "miniapp_page",
+                "jump_payload": {"page": "/pages/product/detail", "product_id": 1},
+                "start_time": now - timedelta(days=5),
+                "end_time": now + timedelta(days=25),
+                "enabled": True,
+                "priority": 100,
+                "platforms": ["miniapp"],
+                "tags": ["新品", "热门"]
+            },
+            {
+                "creative_id": 2,
+                "title": "夏日特饮 - 冰爽柠檬茶",
+                "image_url": "https://via.placeholder.com/750x400?text=柠檬茶特惠",
+                "jump_type": "miniapp_page",
+                "jump_payload": {"page": "/pages/product/detail", "product_id": 5},
+                "start_time": now - timedelta(days=10),
+                "end_time": now + timedelta(days=20),
+                "enabled": True,
+                "priority": 90,
+                "platforms": ["miniapp"],
+                "tags": ["促销"]
+            },
+            {
+                "creative_id": 3,
+                "title": "会员日专享",
+                "image_url": "https://via.placeholder.com/750x400?text=会员专享",
+                "jump_type": "miniapp_page",
+                "jump_payload": {"page": "/pages/user/coupons"},
+                "start_time": now - timedelta(days=2),
+                "end_time": now + timedelta(days=28),
+                "enabled": True,
+                "priority": 80,
+                "platforms": ["miniapp"],
+                "tags": ["会员"]
+            },
+            {
+                "creative_id": 4,
+                "title": "甜品系列上新",
+                "image_url": "https://via.placeholder.com/750x300?text=甜品上新",
+                "jump_type": "miniapp_page",
+                "jump_payload": {"page": "/pages/category/list", "category_id": 4},
+                "start_time": now - timedelta(days=1),
+                "end_time": now + timedelta(days=14),
+                "enabled": True,
+                "priority": 70,
+                "platforms": ["miniapp"],
+                "tags": ["甜品"]
+            },
+            {
+                "creative_id": 5,
+                "title": "下单立享优惠",
+                "image_url": "https://via.placeholder.com/750x200?text=下单优惠",
+                "jump_type": "miniapp_page",
+                "jump_payload": {"page": "/pages/index/index"},
+                "start_time": now,
+                "end_time": now + timedelta(days=30),
+                "enabled": True,
+                "priority": 60,
+                "platforms": ["miniapp"],
+                "tags": ["优惠"]
+            },
+            {
+                "creative_id": 6,
+                "title": "过期广告示例",
+                "image_url": "https://via.placeholder.com/750x400?text=已过期",
+                "jump_type": "none",
+                "jump_payload": None,
+                "start_time": now - timedelta(days=60),
+                "end_time": now - timedelta(days=30),
+                "enabled": False,
+                "priority": 50,
+                "platforms": ["miniapp"],
+                "tags": ["测试"]
+            }
+        ]
+        
+        for creative_data in creatives_data:
+            result = await session.execute(
+                select(AdCreative).where(AdCreative.creative_id == creative_data["creative_id"])
+            )
+            if not result.scalar_one_or_none():
+                session.add(AdCreative(**creative_data))
+                status = "✓" if creative_data["enabled"] else "⊗"
+                print(f"  {status} {creative_data['title']} (优先级: {creative_data['priority']})")
+        
+        await session.commit()
+        print()
+
+
+async def seed_ad_placements(session_factory) -> None:
+    """创建广告投放"""
+    async with session_factory() as session:
+        print("🔗 创建广告投放...")
+        
+        placements_data = [
+            # 首页轮播图
+            {"placement_id": 1, "slot_code": "home_banner", "creative_id": 1, "sort_order": 1},
+            {"placement_id": 2, "slot_code": "home_banner", "creative_id": 2, "sort_order": 2},
+            {"placement_id": 3, "slot_code": "home_banner", "creative_id": 3, "sort_order": 3},
+            # 分类页顶部
+            {"placement_id": 4, "slot_code": "category_top", "creative_id": 4, "sort_order": 1},
+            {"placement_id": 5, "slot_code": "category_top", "creative_id": 1, "sort_order": 2},
+            # 下单成功页
+            {"placement_id": 6, "slot_code": "order_success", "creative_id": 5, "sort_order": 1}
+        ]
+        
+        for placement_data in placements_data:
+            result = await session.execute(
+                select(AdPlacement).where(AdPlacement.placement_id == placement_data["placement_id"])
+            )
+            if not result.scalar_one_or_none():
+                session.add(AdPlacement(**placement_data))
+        
+        await session.commit()
+        print(f"  ✓ 创建了 {len(placements_data)} 个广告投放")
+        print()
+
+
+async def seed_shop_config(session_factory) -> None:
+    """创建店铺配置"""
+    async with session_factory() as session:
+        print("⚙️  创建店铺功能配置...")
+        
+        configs_data = [
+            {
+                "config_key": "features.disable_delivery",
+                "value_json": False,
+                "category": "features",
+                "description": "紧急关闭外卖配送"
+            },
+            {
+                "config_key": "features.disable_coupons",
+                "value_json": False,
+                "category": "features",
+                "description": "临时关闭优惠券功能"
+            },
+            {
+                "config_key": "features.disable_stamps",
+                "value_json": False,
+                "category": "features",
+                "description": "临时关闭集点功能"
+            }
+        ]
+        
+        for config_data in configs_data:
+            result = await session.execute(
+                select(ShopConfig).where(ShopConfig.config_key == config_data["config_key"])
+            )
+            if not result.scalar_one_or_none():
+                session.add(ShopConfig(**config_data))
+                status = "🟢" if not config_data["value_json"] else "🔴"
+                print(f"  {status} {config_data['description']}: {config_data['value_json']}")
+        
+        await session.commit()
+        print()
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="创建测试数据")
     parser.add_argument(
@@ -1250,12 +1516,19 @@ async def main() -> None:
         await seed_product_spec_mappings(session_factory)
         await seed_shop_settings(session_factory)
         await seed_shop_profile(session_factory)
+        await seed_shop_config(session_factory)
         await seed_reservation_slots(session_factory)
         await seed_orders(session_factory)
         await seed_order_items(session_factory)
         await seed_payment_records(session_factory)
         await seed_coupons(session_factory)
         await seed_loyalty_transactions(session_factory)
+        await seed_ad_slots(session_factory)
+        await seed_ad_creatives(session_factory)
+        await seed_ad_placements(session_factory)
+        
+        # 同步所有主键序列（避免后续插入时主键冲突）
+        await sync_sequences(session_factory)
         
         print("=" * 70)
         print("✅ 所有测试数据创建完成！")
@@ -1268,11 +1541,15 @@ async def main() -> None:
         print("   📂 分类: 5 个")
         print("   🥤 商品: 10 个")
         print("   🎨 规格组: 4 个 (糖度/冰度/杯型/加料)")
-        print("   📦 订单: 8 个 (不同状态)")
+        print("   📦 订单: 8 个 (不同状态，含取餐码)")
         print("   💰 支付记录: 6 条")
         print("   🎫 优惠券: 5 张")
         print("   ⭐ 积分记录: 9 条")
         print("   📅 预约时段: 35 个 (未来7天)")
+        print("   🎪 广告位: 3 个")
+        print("   🖼️  广告素材: 6 个")
+        print("   🔗 广告投放: 6 个")
+        print("   ⚙️  店铺配置: 3 个功能开关")
         print()
         print("🔐 测试账号:")
         print("   管理员: admin / admin123")

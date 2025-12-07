@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import get_auth_service
+from app.api.dependencies.auth import get_auth_service, get_current_user_optional
 from app.core.security import TokenScope
+from app.core.settings import Settings, get_settings
+from app.db.session import get_async_session
 from app.metrics.auth import USER_LOGIN_TOTAL
 from app.schemas import (
+    PhoneBindRequestSchema,
+    PhoneBindResponseSchema,
     UserLoginRequestSchema,
     UserLoginResponseSchema,
     UserSummarySchema,
 )
 from app.services.auth import AuthService
+from app.services.phone import PhoneBindError, PhoneService
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+# DEPRECATED: 旧版登录路由，已被微信认证路由取代
+# 保留用于测试和兼容，使用不同前缀避免冲突
+router = APIRouter(prefix="/api/v1/users-legacy", tags=["users-legacy"])
 
 
 async def _resolve_open_id(code: str) -> str:
@@ -26,8 +34,8 @@ async def _resolve_open_id(code: str) -> str:
     return open_id
 
 
-@router.post("/login", response_model=UserLoginResponseSchema)
-async def user_login(
+@router.post("/login", response_model=UserLoginResponseSchema, deprecated=True)
+async def user_login_legacy(
     payload: UserLoginRequestSchema,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserLoginResponseSchema:
@@ -53,3 +61,38 @@ async def user_login(
     except HTTPException:
         USER_LOGIN_TOTAL.labels(result="failure").inc()
         raise
+
+
+async def get_phone_service(
+    session: AsyncSession = Depends(get_async_session),
+    settings: Settings = Depends(get_settings),
+) -> PhoneService:
+    return PhoneService(session, settings)
+
+
+@router.post(
+    "/phone/bind",
+    response_model=PhoneBindResponseSchema,
+    summary="绑定手机号并返回明文号码（已废弃）",
+    deprecated=True,
+)
+async def bind_phone_number_legacy(
+    payload: PhoneBindRequestSchema,
+    phone_service: PhoneService = Depends(get_phone_service),
+    current_user=Depends(get_current_user_optional),
+) -> PhoneBindResponseSchema:
+    try:
+        phone_number = await phone_service.bind_phone(
+            code=payload.code,
+            user=current_user,
+            guest_session_id=payload.guest_session_id,
+        )
+        return PhoneBindResponseSchema(
+            phone_number=phone_number,
+            from_guest_session=current_user is None,
+        )
+    except PhoneBindError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc

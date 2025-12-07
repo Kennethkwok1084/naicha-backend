@@ -3,6 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from app.core.security import TokenScope, create_access_token
 from app.db.session import get_async_session
 from app.main import app
@@ -17,8 +20,6 @@ from app.models.catalog import (
 )
 from app.models.orders import AuditLog
 from app.services.menu import invalidate_menu_cache
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 
 def _admin_token(admin_id: int) -> str:
@@ -48,7 +49,9 @@ async def _seed_menu(db_session) -> tuple[Product, SpecOption]:
         inventory_status="in_stock",
         sort_order=1,
     )
-    product_spec = ProductSpecMapping(mapping_id=3001, product_id=product.product_id, group_id=spec_group.group_id)
+    product_spec = ProductSpecMapping(
+        mapping_id=3001, product_id=product.product_id, group_id=spec_group.group_id
+    )
 
     db_session.add_all([category, product, mapping, spec_group, spec_option, product_spec])
     await db_session.flush()

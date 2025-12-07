@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.api.routes.guests import create_guest_session
 from app.db.session import get_async_session
 from app.main import app
 from app.models.orders import IdempotencyKey
 from app.schemas import GuestSessionCreateRequestSchema
 from app.services.guest import GuestSessionService
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

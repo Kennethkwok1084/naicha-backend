@@ -3,9 +3,10 @@
 from datetime import UTC, datetime
 
 import pytest
-from app.models.accounts import Coupon, User
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.accounts import Coupon, User
 
 
 @pytest.mark.asyncio
@@ -34,11 +35,11 @@ async def test_get_coupons_returns_all_statuses(
     )
     assert response.status_code == 200
     data = response.json()
-    
+
     assert "coupons" in data
     assert "stats" in data
     assert len(data["coupons"]) == 4
-    
+
     # 验证统计数据
     stats = data["stats"]
     assert stats["total_count"] == 4
@@ -72,7 +73,7 @@ async def test_get_coupons_filter_by_active(
     )
     assert response.status_code == 200
     data = response.json()
-    
+
     assert len(data["coupons"]) == 2
     for coupon in data["coupons"]:
         assert coupon["status"] == "active"
@@ -105,7 +106,7 @@ async def test_get_coupons_filter_by_used(
     )
     assert response.status_code == 200
     data = response.json()
-    
+
     assert len(data["coupons"]) == 2
     for coupon in data["coupons"]:
         assert coupon["status"] == "used"
@@ -160,7 +161,7 @@ async def test_get_coupons_empty_for_new_user(
     )
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["coupons"] == []
     stats = data["stats"]
     assert stats["total_count"] == 0
@@ -221,7 +222,7 @@ async def test_get_coupons_only_returns_own_coupons(
     )
     assert response.status_code == 200
     data = response.json()
-    
+
     assert len(data["coupons"]) == 1
     assert data["stats"]["total_count"] == 1
 

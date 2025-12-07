@@ -36,9 +36,7 @@ class ConfigService:
         if _CONFIG_CACHE_CLIENT is not None:
             return _CONFIG_CACHE_CLIENT
         try:
-            _CONFIG_CACHE_CLIENT = from_url(
-                self._settings.celery_broker_url, decode_responses=True
-            )
+            _CONFIG_CACHE_CLIENT = from_url(self._settings.celery_broker_url, decode_responses=True)
         except Exception as exc:  # pragma: no cover - 初始化失败仅记录
             logger.warning("config.cache_client_init_failed", error=str(exc))
             return None
@@ -108,7 +106,9 @@ class ConfigService:
             logger.warning("config.cache_decode_failed")
         return None
 
-    async def _write_public_config_to_cache(self, payload: dict[str, Any], ttl_seconds: int) -> None:
+    async def _write_public_config_to_cache(
+        self, payload: dict[str, Any], ttl_seconds: int
+    ) -> None:
         client = self._get_cache_client()
         if client is None:
             return

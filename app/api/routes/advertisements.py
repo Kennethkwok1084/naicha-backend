@@ -30,13 +30,13 @@ async def fetch_ad_config(
 ) -> AdConfigResponseSchema:
     slot_list = [slot.strip() for slot in slots.split(",") if slot.strip()]
     payload = await service.get_config(slots=slot_list, platform=platform, current_version=version)
-    
+
     # 记录请求结果
     if payload.version == version and not payload.slots:
         ADS_CONFIG_REQUEST_TOTAL.labels(result="version_match").inc()
     else:
         ADS_CONFIG_REQUEST_TOTAL.labels(result="success").inc()
-    
+
     return payload
 
 

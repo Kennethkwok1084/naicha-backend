@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.db.session import get_async_session
 from app.main import app
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio
